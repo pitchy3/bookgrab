@@ -43,3 +43,19 @@ def test_build_search_payload_matches_documented_shape():
     assert payload["tor"]["sortType"] == "seedersDesc"
     assert payload["tor"]["startNumber"] == "0"
     assert payload["tor"]["main_cat"] == ["13"]
+
+
+def test_normalize_result_parses_string_flags_as_false():
+    raw = {"id": "7", "title": "Flags", "free": "0", "fl_vip": "0", "vip": "0", "my_snatched": "0"}
+    row = normalize_result(raw)
+    assert row["free"] is False
+    assert row["vip"] is False
+    assert row["my_snatched"] is False
+
+
+def test_normalize_result_parses_string_flags_as_true():
+    raw = {"id": "8", "title": "Flags", "free": "1", "vip": "true", "my_snatched": "yes"}
+    row = normalize_result(raw)
+    assert row["free"] is True
+    assert row["vip"] is True
+    assert row["my_snatched"] is True

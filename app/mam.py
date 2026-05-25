@@ -70,6 +70,22 @@ def build_search_payload(
     }
 
 
+def _parse_flag(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, float):
+        return value != 0.0
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in {"1", "true", "yes", "y", "on"}:
+            return True
+        if s in {"0", "false", "no", "n", "off", ""}:
+            return False
+    return bool(value)
+
+
 def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": int(item.get("id", 0)),
@@ -81,9 +97,9 @@ def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
         "size": str(item.get("size", "")),
         "seeders": int(item.get("seeders", 0) or 0),
         "leechers": int(item.get("leechers", 0) or 0),
-        "free": bool(item.get("free", False) or item.get("fl_vip", False)),
-        "vip": bool(item.get("vip", False)),
-        "my_snatched": bool(item.get("my_snatched", False)),
+        "free": _parse_flag(item.get("free", False)) or _parse_flag(item.get("fl_vip", False)),
+        "vip": _parse_flag(item.get("vip", False)),
+        "my_snatched": _parse_flag(item.get("my_snatched", False)),
         "added": str(item.get("added", "")),
         "catname": str(item.get("catname", "")),
         "_dl": str(item.get("dl", "")),

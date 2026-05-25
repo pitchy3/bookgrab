@@ -111,18 +111,20 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
     _require_login(request)
 
     matched: dict[str, Any] | None = None
-    for cache in _search_cache.values():
+    cached_media_type: str | None = None
+    for cache_key, cache in _search_cache.items():
         if payload.id in cache:
             matched = cache[payload.id]
+            cached_media_type = cache_key.split(":", 1)[0]
             break
-    if not matched:
+    if not matched or cached_media_type not in {"audiobook", "ebook"}:
         raise HTTPException(status_code=404, detail="Result not found in recent server-side search cache")
 
     try:
         torrent_bytes = await mam_client.download_torrent(matched.get("_dl", ""))
-        category = await qbit_client.add_torrent(torrent_bytes, payload.media_type, matched.get("title", "mam"))
-        add_history(str(payload.id), matched.get("title", ""), payload.media_type, category, "success")
+        category = await qbit_client.add_torrent(torrent_bytes, cached_media_type, matched.get("title", "mam"))
+        add_history(str(payload.id), matched.get("title", ""), cached_media_type, category, "success")
     except (MamError, QbitError) as exc:
-        add_history(str(payload.id), matched.get("title", ""), payload.media_type, "", "failed", str(exc))
+        add_history(str(payload.id), matched.get("title", ""), cached_media_type, "", "failed", str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"ok": True, "message": "Added to qBittorrent"}

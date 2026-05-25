@@ -1,0 +1,11 @@
+services:
+  bookgrab:
+    build: .
+    container_name: bookgrab
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    volumes:
+      - ./config:/config
+    restart: unless-stopped

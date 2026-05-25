@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BookGrab</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="container">
+  <h1>BookGrab</h1>
+  {% if not logged_in %}
+  <div class="card">
+    <h2>Login</h2>
+    <input id="username" placeholder="Username" />
+    <input id="password" type="password" placeholder="Password" />
+    <button id="loginBtn">Login</button>
+  </div>
+  {% endif %}
+
+  <div id="app" class="{% if not logged_in %}hidden{% endif %}">
+    <div class="card">
+      <input id="query" placeholder="Search title/author/narrator/series" />
+      <select id="mediaType"><option value="audiobook">Audiobook</option><option value="ebook">E-book</option></select>
+      <select id="sort"><option value="seedersDesc">Seeders desc</option><option value="addedDesc">Added desc</option><option value="sizeAsc">Size asc</option><option value="sizeDesc">Size desc</option></select>
+      <div>
+        <label><input type="checkbox" value="title" checked />Title</label>
+        <label><input type="checkbox" value="author" checked />Author</label>
+        <label><input type="checkbox" value="narrator" checked />Narrator</label>
+        <label><input type="checkbox" value="series" checked />Series</label>
+      </div>
+      <button id="searchBtn">Search</button>
+    </div>
+    <div id="status"></div>
+    <table id="results"><thead><tr><th>Title</th><th>Meta</th><th>Peers</th><th>Flags</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+</div>
+<script>
+window.DEFAULTS = {
+  mediaType: "{{ defaults.default_media_type }}",
+  sort: "{{ defaults.default_sort }}"
+};
+</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

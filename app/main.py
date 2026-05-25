@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -11,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.db import add_history, init_db
+from app.db import add_history, get_db_path, init_db
 from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
 from app.qbittorrent import QbitClient, QbitError
@@ -47,8 +48,28 @@ def _require_login(request: Request) -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    os.makedirs(settings.config_dir, exist_ok=True)
-    init_db()
+    uid = os.getuid()
+    gid = os.getgid()
+    db_path = get_db_path()
+    config_dir = Path(settings.config_dir)
+
+    print("BookGrab starting")
+    print(f"Config directory: {config_dir}")
+    print(f"Database path: {db_path}")
+    print(f"Running as UID:GID: {uid}:{gid}")
+
+    try:
+        init_db()
+    except Exception as exc:
+        config_exists = config_dir.exists()
+        config_writable = os.access(config_dir, os.W_OK)
+        raise RuntimeError(
+            f"Failed to initialize SQLite database at {db_path}. "
+            f"The /config directory must exist and be writable by the container user. "
+            f"/config exists={config_exists}, writable={config_writable}. "
+            f"Current UID:GID is {uid}:{gid}. "
+            "On the host, try: mkdir -p ./config && chown -R <uid>:<gid> ./config && chmod -R u+rwX,g+rwX ./config"
+        ) from exc
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -78,8 +99,8 @@ async def logout() -> RedirectResponse:
 
 
 @app.get("/api/health")
-async def health() -> dict[str, bool]:
-    return {"ok": True}
+async def health() -> dict[str, str | bool]:
+    return {"ok": True, "database": "ok"}
 
 
 @app.post("/api/search")

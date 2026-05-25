@@ -66,6 +66,7 @@ See `.env.example` for full list.
 Important:
 - Fill source authentication variables in `.env` so backend source requests are authenticated.
 - Fill `QBIT_*` values to match your qBittorrent instance.
+- Set `PUID`/`PGID` to match the host user/group that owns your bind-mounted `config` directory (defaults are `1000:1000`).
 
 ## Source auth notes
 
@@ -107,6 +108,26 @@ Optionally set save paths with:
 - **No results**: confirm query, media type, and active source authentication.
 - **Torrent already exists**: qBittorrent may reject duplicates; this is expected.
 - **Category/save path issues**: verify categories exist in qBittorrent and save path is writable.
+
+## Troubleshooting: sqlite3.OperationalError: unable to open database file
+
+If you see SQLite startup errors, the container user cannot write to `/config` (where `DATABASE_PATH` defaults to `/config/app.db`).
+
+On the host:
+
+```bash
+cd /path/to/bookgrab
+mkdir -p config
+sudo chown -R 1000:1000 config
+chmod -R u+rwX,g+rwX config
+docker compose down
+docker compose up -d --build
+docker compose logs -f
+```
+
+On some NAS systems (including TerraMaster), bind-mounted folders may be created as `root` or another system user. The `config` folder must be writable by the container user (`1000:1000` in this image).
+
+If you see a Compose warning like `The "iP" variable is not set`, check your local `.env` for `$iP` references and replace them with `${IP}` (uppercase), then define `IP=...` in `.env`.
 
 ## Local checks
 

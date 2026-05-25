@@ -33,6 +33,7 @@ class Settings:
     default_search_type: str = os.getenv("DEFAULT_SEARCH_TYPE", "active")
 
     config_dir: str = os.getenv("CONFIG_DIR", "/config")
+    database_path: str = os.getenv("DATABASE_PATH", "/config/app.db")
 
 
 settings = Settings()

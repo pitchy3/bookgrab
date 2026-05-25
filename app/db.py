@@ -3,14 +3,34 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import datetime, UTC
+from pathlib import Path
 
 from app.config import settings
 
 
+def get_db_path() -> Path:
+    return Path(settings.database_path)
+
+
+def ensure_db_path_ready() -> Path:
+    db_path = get_db_path()
+    db_dir = db_path.parent
+    db_dir.mkdir(parents=True, exist_ok=True)
+
+    if not os.access(db_dir, os.W_OK):
+        raise RuntimeError(
+            f"Database directory is not writable: {db_dir}. "
+            "Check Docker volume permissions for /config."
+        )
+    if db_path.exists() and (not os.access(db_path, os.R_OK) or not os.access(db_path, os.W_OK)):
+        raise RuntimeError(f"Database file exists but is not readable/writable: {db_path}")
+
+    return db_path
+
+
 def get_conn() -> sqlite3.Connection:
-    os.makedirs(settings.config_dir, exist_ok=True)
-    path = os.path.join(settings.config_dir, "app.db")
-    conn = sqlite3.connect(path)
+    db_path = ensure_db_path_ready()
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     return conn
 

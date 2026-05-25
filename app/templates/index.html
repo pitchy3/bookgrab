@@ -10,7 +10,7 @@
 <div class="container">
   <h1>BookGrab</h1>
   {% if not logged_in %}
-  <div class="card">
+  <div id="loginCard" class="card">
     <h2>Login</h2>
     <input id="username" placeholder="Username" />
     <input id="password" type="password" placeholder="Password" />
@@ -32,7 +32,18 @@
       <button id="searchBtn">Search</button>
     </div>
     <div id="status"></div>
-    <table id="results"><thead><tr><th>Title</th><th>Meta</th><th>Peers</th><th>Flags</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="results">
+      <thead>
+        <tr>
+          <th>Book</th>
+          <th>Details</th>
+          <th>Availability</th>
+          <th>Highlights</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 </div>
 <script>

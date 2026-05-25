@@ -1,6 +1,7 @@
 const statusEl = document.getElementById('status');
 const tbody = document.querySelector('#results tbody');
 const app = document.getElementById('app');
+const loginCard = document.getElementById('loginCard');
 
 function setStatus(msg, isErr=false){ statusEl.textContent = msg; statusEl.className = isErr ? 'err' : 'ok'; }
 
@@ -18,18 +19,17 @@ async function doSearch() {
 
 function renderResults(results){
   tbody.innerHTML = '';
-  results.forEach(r => {
+  results.filter(r => (r.seeders || 0) > 0).forEach(r => {
     const flags = [];
-    if (r.seeders === 0) flags.push('0 seeders');
     if (!r.free) flags.push('not freeleech');
     if (r.my_snatched) flags.push('already snatched');
     if ((r.size || '').toLowerCase().includes('gib') && parseFloat(r.size) > 2) flags.push('very large');
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.title}<br/><small>${r.catname||''}</small></td>
-      <td>A:${r.author||'-'}<br/>N:${r.narrator||'-'}<br/>S:${r.series||'-'}<br/>${r.filetypes||''} | ${r.size||''}</td>
-      <td>${r.seeders}/${r.leechers}</td>
-      <td>${flags.map(f=>`<span class='badge warn'>${f}</span>`).join('')} ${r.free?"<span class='badge ok'>free</span>":''} ${r.vip?"<span class='badge vip'>vip</span>":''}</td>
-      <td><button data-id='${r.id}' data-media='${document.getElementById('mediaType').value}'>Add</button></td>`;
+    tr.innerHTML = `<td><div class='book-title'>${r.title}</div><div class='book-sub'>${r.catname||''}</div></td>
+      <td><div><span class='field-label'>Author:</span> ${r.author||'-'}</div><div><span class='field-label'>Narrator:</span> ${r.narrator||'-'}</div><div><span class='field-label'>Series:</span> ${r.series||'-'}</div><div><span class='field-label'>Format:</span> ${r.filetypes||''} ${r.size?`• ${r.size}`:''}</div></td>
+      <td><span class='peer-pill'>${r.seeders} seeders</span><br/><span class='peer-muted'>${r.leechers} leechers</span></td>
+      <td>${flags.map(f=>`<span class='badge warn'>${f}</span>`).join('')} ${r.free?"<span class='badge ok'>freeleech</span>":''} ${r.vip?"<span class='badge vip'>vip</span>":''}</td>
+      <td><button class='add-btn' data-id='${r.id}' data-media='${document.getElementById('mediaType').value}'>Add to queue</button></td>`;
     tr.querySelector('button').onclick = doAdd;
     tbody.appendChild(tr);
   });
@@ -55,5 +55,6 @@ document.getElementById('loginBtn')?.addEventListener('click', async () => {
   const data = await resp.json();
   if (!resp.ok) return setStatus(data.detail || 'Login failed', true);
   app.classList.remove('hidden');
+  loginCard?.classList.add('hidden');
   setStatus('Logged in');
 });

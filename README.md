@@ -1,2 +1,5 @@
-# bookgrab
-A lightweight self-hosted book and audiobook search-to-download helper for qBittorrent.
+# BookGrab
+
+BookGrab is a lightweight self-hosted helper for searching configured book/audiobook sources and sending selected results to qBittorrent.
+
+It is not a library manager, metadata manager, or Readarr replacement. It is a simple human-reviewed search-and-send tool.

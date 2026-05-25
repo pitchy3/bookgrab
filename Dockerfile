@@ -8,8 +8,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN groupadd --gid "${PGID}" app && \
-    useradd --uid "${PUID}" --gid "${PGID}" --create-home --shell /usr/sbin/nologin app
+RUN set -eux; \
+    if ! getent group "${PGID}" >/dev/null; then \
+        groupadd --gid "${PGID}" app; \
+    fi; \
+    if ! getent passwd "${PUID}" >/dev/null; then \
+        useradd --uid "${PUID}" --gid "${PGID}" --create-home --shell /usr/sbin/nologin app; \
+    fi
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -17,8 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY README.md .
 
-RUN mkdir -p /config && chown -R app:app /app /config && chmod -R u+rwX,g+rwX /config
-USER app
+RUN mkdir -p /config && chown -R "${PUID}:${PGID}" /app /config && chmod -R u+rwX,g+rwX /config
+USER ${PUID}:${PGID}
 
 EXPOSE 8787
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787"]

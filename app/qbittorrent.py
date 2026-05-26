@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import httpx
 
 from app.config import settings
@@ -68,23 +69,32 @@ class QbitClient:
             raise QbitError("Failed to upload torrent to qBittorrent")
         if "Fails." in resp.text:
             raise QbitError("Torrent add failed (possibly duplicate)")
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                await self._login(client)
-                after = await self.get_torrents(client)
-        except httpx.HTTPError:
-            after = []
+        after = []
+        for _ in range(5):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    await self._login(client)
+                    after = await self.get_torrents(client)
+            except httpx.HTTPError:
+                after = []
+            old_hashes = {t["hash"] for t in before if t.get("hash")}
+            if any(t.get("hash") not in old_hashes for t in after):
+                break
+            await asyncio.sleep(0.4)
         old_hashes = {t["hash"] for t in before if t.get("hash")}
         candidates = [t for t in after if t.get("hash") not in old_hashes]
         selected = None
         if len(candidates) == 1:
             selected = candidates[0]
         elif len(candidates) > 1:
-            for c in candidates:
-                if c.get("category") == category or c.get("name") == name:
-                    selected = c
-                    break
-            selected = selected or candidates[0]
+            name_l = (name or "").lower()
+            strong = [c for c in candidates if c.get("category") == category and name_l and name_l in (c.get("name") or "").lower()]
+            if len(strong) == 1:
+                selected = strong[0]
+            elif not strong:
+                weak = [c for c in candidates if c.get("category") == category or (name_l and name_l in (c.get("name") or "").lower())]
+                if len(weak) == 1:
+                    selected = weak[0]
         return {
             "category": category,
             "hash": selected.get("hash") if selected else None,

@@ -17,14 +17,13 @@ def test_normalize_result_parses_json_people_fields():
         "my_snatched": False,
         "added": "2026-01-01",
         "catname": "Audiobooks",
-        "dl": "secret",
     }
     row = normalize_result(raw)
     assert row["id"] == 42
     assert row["author"] == "Author A, Author B"
     assert row["narrator"] == "Narr A"
     assert row["series"] == "Series X"
-    assert row["_dl"] == "secret"
+    assert row["_torrent_id"] == "42"
 
 
 def test_build_search_payload_matches_documented_shape():

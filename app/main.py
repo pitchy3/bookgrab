@@ -146,7 +146,7 @@ async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]
     per_id: dict[int, dict[str, Any]] = {}
     for row in rows:
         per_id[row["id"]] = row
-        safe = {k: v for k, v in row.items() if k != "_dl"}
+        safe = {k: v for k, v in row.items() if k != "_torrent_id"}
         sanitized.append(safe)
     _search_cache[f"{payload.media_type}:{payload.query.lower()}:{payload.sort}"] = per_id
     return {"results": sanitized}
@@ -167,7 +167,11 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Result not found in recent server-side search cache")
 
     try:
-        torrent_bytes = await mam_client.download_torrent(matched.get("_dl", ""))
+        torrent_id = str(matched.get("_torrent_id") or "").strip()
+        if not torrent_id:
+            keys = sorted(matched.keys())
+            raise MamError(f"Missing source torrent id; available result keys: {keys}")
+        torrent_bytes = await mam_client.download_torrent(torrent_id)
         result = await qbit_client.add_torrent(torrent_bytes, cached_media_type, matched.get("title", "mam"))
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, result.get("category", ""), "success")
         import_status = "queued" if settings.import_enabled else "disabled"

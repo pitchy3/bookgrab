@@ -87,6 +87,7 @@ def _parse_flag(value: Any) -> bool:
 
 
 def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
+    torrent_id = str(item.get("id", "")).strip()
     return {
         "id": int(item.get("id", 0)),
         "title": str(item.get("title", "")).strip(),
@@ -102,7 +103,7 @@ def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
         "my_snatched": _parse_flag(item.get("my_snatched", False)),
         "added": str(item.get("added", "")),
         "catname": str(item.get("catname", "")),
-        "_dl": str(item.get("dl", "")),
+        "_torrent_id": torrent_id,
     }
 
 
@@ -134,14 +135,21 @@ class MamClient:
         filtered = [normalize_result(r) for r in rows if str(r.get("main_cat", "")) == MEDIA_TO_MAIN_CAT[media_type]]
         return filtered
 
-    async def download_torrent(self, dl_hash: str) -> bytes:
-        if not dl_hash:
-            raise MamError("Missing source download hash")
-        url = f"{self.base_url}/tor/download.php/{dl_hash}"
+    async def download_torrent(self, torrent_id: str) -> bytes:
+        tid = str(torrent_id).strip()
+        if not tid:
+            raise MamError("Missing source torrent id")
+        url = f"{self.base_url}/tor/download.php?tid={tid}"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 resp = await client.get(url, headers=self._headers())
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
                 raise MamError("Failed downloading torrent. Session may be expired.") from exc
-        return resp.content
+        content_type = resp.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        body = resp.content
+        if content_type == "application/x-bittorrent" or body.startswith(b"d"):
+            return body
+        raise MamError(
+            f"MAM download response was not a torrent (content-type={content_type or 'unknown'})"
+        )

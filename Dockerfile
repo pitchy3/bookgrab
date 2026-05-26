@@ -23,7 +23,9 @@ COPY app ./app
 COPY README.md .
 
 RUN mkdir -p /config && chown -R "${PUID}:${PGID}" /app /config && chmod -R u+rwX,g+rwX /config
-USER ${PUID}:${PGID}
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8787
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787"]

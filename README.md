@@ -67,6 +67,7 @@ Important:
 - Fill source authentication variables in `.env` so backend source requests are authenticated.
 - Fill `QBIT_*` values to match your qBittorrent instance.
 - Set `PUID`/`PGID` to match the host user/group that owns your bind-mounted `config` directory (defaults are `1000:1000`).
+- `PUID`/`PGID` are applied at container startup, so changing them in `.env` works even without rebuilding an existing image.
 
 ## Source auth notes
 

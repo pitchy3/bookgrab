@@ -10,6 +10,9 @@ services:
       - "8787:8787"
     env_file:
       - .env
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
     volumes:
       - ./config:/config
     restart: unless-stopped

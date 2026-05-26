@@ -12,9 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.db import add_history, get_db_path, init_db
+from app.db import add_history, get_db_path, get_import_status, init_db, record_download
 from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
+from app.importer import importer_loop, run_import_once
 from app.qbittorrent import QbitClient, QbitError
 
 app = FastAPI(title="BookGrab")
@@ -24,6 +25,18 @@ templates = Jinja2Templates(directory="app/templates")
 mam_client = MamClient()
 qbit_client = QbitClient()
 _search_cache: dict[str, dict[int, dict[str, Any]]] = {}
+_importer_task = None
+
+
+def _validate_import_config() -> None:
+    if settings.import_mode != "hardlink":
+        raise RuntimeError("IMPORT_MODE currently supports only 'hardlink'")
+    if settings.import_conflict_policy not in {"skip", "replace"}:
+        raise RuntimeError("IMPORT_CONFLICT_POLICY must be 'skip' or 'replace'")
+    if settings.import_min_completion_ratio < 0 or settings.import_min_completion_ratio > 1:
+        raise RuntimeError("IMPORT_MIN_COMPLETION_RATIO must be between 0.0 and 1.0")
+    if not settings.import_audiobook_library_path and not settings.import_ebook_library_path:
+        raise RuntimeError("At least one of IMPORT_AUDIOBOOK_LIBRARY_PATH or IMPORT_EBOOK_LIBRARY_PATH must be set when importer is enabled")
 
 
 def _sign_token(value: str) -> str:
@@ -58,6 +71,7 @@ async def startup() -> None:
     print(f"Database path: {db_path}")
     print(f"Running as UID:GID: {uid}:{gid}")
 
+    global _importer_task
     try:
         init_db()
     except Exception as exc:
@@ -70,6 +84,17 @@ async def startup() -> None:
             f"Current UID:GID is {uid}:{gid}. "
             "On the host, try: mkdir -p ./config && chown -R <uid>:<gid> ./config && chmod -R u+rwX,g+rwX ./config"
         ) from exc
+
+    if settings.import_enabled:
+        _validate_import_config()
+        _importer_task = __import__("asyncio").create_task(importer_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    global _importer_task
+    if _importer_task:
+        _importer_task.cancel()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -143,9 +168,25 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
 
     try:
         torrent_bytes = await mam_client.download_torrent(matched.get("_dl", ""))
-        category = await qbit_client.add_torrent(torrent_bytes, cached_media_type, matched.get("title", "mam"))
-        add_history(str(payload.id), matched.get("title", ""), cached_media_type, category, "success")
+        result = await qbit_client.add_torrent(torrent_bytes, cached_media_type, matched.get("title", "mam"))
+        add_history(str(payload.id), matched.get("title", ""), cached_media_type, result.get("category", ""), "success")
+        import_status = "queued" if settings.import_enabled else "disabled"
+        record_download(mam_id=str(payload.id), title=matched.get("title", ""), media_type=cached_media_type, qbit_category=result.get("category"), qbit_hash=result.get("hash"), qbit_name=result.get("name"), save_path=result.get("save_path"), content_path=result.get("content_path"), import_status=import_status, last_error=result.get("last_error"))
     except (MamError, QbitError) as exc:
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, "", "failed", str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return {"ok": True, "message": "Added to qBittorrent"}
+    return {"ok": True, "message": "Added to qBittorrent", "hash": result.get("hash"), "category": result.get("category"), "import_status": import_status}
+
+
+@app.post("/api/import/run")
+async def api_import_run(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    if not settings.import_enabled:
+        return {"enabled": False, "message": "Importer is disabled"}
+    return await run_import_once(qbit_client)
+
+
+@app.get("/api/import/status")
+async def api_import_status(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    return get_import_status()

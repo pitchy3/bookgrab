@@ -43,7 +43,7 @@ async def recover_qbit_torrent_for_download(download: dict, qbit_client) -> dict
             continue
         matched = False
         for key in title_keys:
-            if (t_name and (key in t_name or t_name in key)) or (t_base and (key in t_base or t_base in key)):
+            if (t_name and key in t_name) or (t_base and key in t_base):
                 matched = True
                 break
         if matched:
@@ -141,6 +141,9 @@ async def import_download(download: dict, qbit_torrent: dict | None) -> str:
         content_path = (qbit_torrent or {}).get("content_path") or download.get("content_path") or ""
         download["content_path"] = content_path
         print(f"Importer: selected content_path for id={download['id']}: {content_path}")
+        if not content_path:
+            update_download_import_state(download["id"], "waiting", "Missing content path from qBittorrent and download record")
+            return "waiting"
         files = find_importable_files(content_path, media_type)
         if not files:
             update_download_import_state(download["id"], "failed", "No supported files found", completed=True)
@@ -195,12 +198,16 @@ async def run_import_once(qbit_client=None) -> dict:
             d["qbit_name"] = t.get("name") or d.get("qbit_name")
             d["save_path"] = t.get("save_path") or d.get("save_path")
             d["content_path"] = t.get("content_path") or d.get("content_path")
-        complete = t["progress"] >= settings.import_min_completion_ratio
+        progress = float(t.get("progress", 0.0) or 0.0)
+        amount_left = int(t.get("amount_left", 0) or 0)
+        state = str(t.get("state", ""))
+        complete = progress >= settings.import_min_completion_ratio and amount_left == 0
         if settings.import_require_seeding_or_complete:
-            complete = complete and (t.get("state", "").lower() in COMPLETE_STATES)
-        print(f"Importer: completion check id={d['id']} progress={t.get('progress')} state={t.get('state')} amount_left={t.get('amount_left')} complete={complete}")
+            complete = complete and (state.lower() in COMPLETE_STATES)
+        print(f"Importer: completion check id={d['id']} progress={progress} state={state} amount_left={amount_left} complete={complete}")
         if not complete:
-            mark_download_checked(d["id"], "waiting")
+            reason = f"Torrent not ready: progress={progress}, state={state}, amount_left={amount_left}"
+            mark_download_checked(d["id"], "waiting", reason)
             summary["waiting"] += 1
             continue
         status = await import_download(d, t)

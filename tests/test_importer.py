@@ -117,6 +117,18 @@ def test_recover_no_match_sets_error(monkeypatch):
     assert "no matching" in errors[-1]
 
 
+def test_recover_does_not_use_reverse_generic_substring(monkeypatch):
+    errors = []
+    monkeypatch.setattr(importer, "mark_download_checked", lambda _id, _s, e=None: errors.append(e))
+    d1 = {"id": 1, "title": "The Book Thief", "media_type": "audiobook"}
+    out1 = asyncio.run(importer.recover_qbit_torrent_for_download(d1, _Qbit([{"hash": "h", "name": "Book.mp3", "category": "audiobooks", "content_path": "/x/Book.mp3"}])))
+    assert out1 is None
+    d2 = {"id": 2, "title": "Project Hail Mary", "media_type": "audiobook"}
+    out2 = asyncio.run(importer.recover_qbit_torrent_for_download(d2, _Qbit([{"hash": "h2", "name": "Hail.mp3", "category": "audiobooks", "content_path": "/x/Hail.mp3"}])))
+    assert out2 is None
+    assert all("no matching" in e for e in errors)
+
+
 def test_run_import_once_recovers_and_uses_fresh_content_path(monkeypatch):
     monkeypatch.setattr(importer.settings, "import_enabled", True)
     monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", False)
@@ -139,3 +151,19 @@ def test_run_import_once_recovers_and_uses_fresh_content_path(monkeypatch):
     summary = asyncio.run(importer.run_import_once(q))
     assert summary["processed"] == 1
     assert seen["content_path"] == "/fresh/book.mp3"
+
+
+def test_run_import_once_waiting_reason_includes_progress_state_amount(monkeypatch):
+    monkeypatch.setattr(importer.settings, "import_enabled", True)
+    monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", True)
+    monkeypatch.setattr(importer.settings, "import_min_completion_ratio", 0.95)
+    monkeypatch.setattr(importer, "get_pending_imports", lambda: [{"id": 1, "title": "Book", "media_type": "audiobook", "qbit_hash": "h1", "content_path": "/x"}])
+    captured = {}
+    monkeypatch.setattr(importer, "mark_download_checked", lambda _id, _s, e=None: captured.setdefault("error", e))
+    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: None)
+    q = _Qbit(torrent={"hash": "h1", "name": "Book", "category": "audiobooks", "content_path": "/x", "save_path": "/x", "progress": 1.0, "state": "downloading", "amount_left": 0})
+    summary = asyncio.run(importer.run_import_once(q))
+    assert summary["waiting"] == 1
+    assert "progress=1.0" in captured["error"]
+    assert "state=downloading" in captured["error"]
+    assert "amount_left=0" in captured["error"]

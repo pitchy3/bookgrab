@@ -88,15 +88,13 @@ class QbitClient:
             selected = candidates[0]
         elif len(candidates) > 1:
             name_l = (name or "").lower()
-            for c in candidates:
-                if c.get("category") == category and name_l in (c.get("name") or "").lower():
-                    selected = c
-                    break
-            if not selected:
-                for c in candidates:
-                    if c.get("category") == category or name_l in (c.get("name") or "").lower():
-                        selected = c
-                        break
+            strong = [c for c in candidates if c.get("category") == category and name_l and name_l in (c.get("name") or "").lower()]
+            if len(strong) == 1:
+                selected = strong[0]
+            elif not strong:
+                weak = [c for c in candidates if c.get("category") == category or (name_l and name_l in (c.get("name") or "").lower())]
+                if len(weak) == 1:
+                    selected = weak[0]
         return {
             "category": category,
             "hash": selected.get("hash") if selected else None,

@@ -1,0 +1,89 @@
+name: Release Docker Image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image metadata
+        id: meta
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          raw_ref="${GITHUB_REF_NAME}"
+          version=$(echo "$raw_ref" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9_.-]+#-#g; s#^[.-]+##; s#[.-]+$##')
+          if [ -z "$version" ]; then
+            version="manual"
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image for smoke test
+        run: |
+          docker build \
+            --tag "${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}" \
+            --tag "${{ steps.meta.outputs.image }}:ci-smoke" \
+            .
+
+      - name: Run smoke test container
+        run: |
+          docker run -d --name bookgrab-smoke \
+            -p 8787:8787 \
+            -e APP_AUTH_ENABLED=false \
+            "${{ steps.meta.outputs.image }}:ci-smoke"
+
+      - name: Wait for service and verify health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS "http://127.0.0.1:8787/api/health" | grep -q '"ok":true'; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed"
+          docker logs bookgrab-smoke
+          exit 1
+
+      - name: Stop smoke test container
+        if: always()
+        run: docker rm -f bookgrab-smoke || true
+
+  publish:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    needs: build-and-verify
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push release image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ needs.build-and-verify.outputs.image }}:${{ needs.build-and-verify.outputs.version }}
+            ${{ needs.build-and-verify.outputs.image }}:latest

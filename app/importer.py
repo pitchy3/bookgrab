@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import settings
@@ -11,6 +12,22 @@ from app.db import get_pending_imports, mark_download_checked, record_imported_f
 JUNK = {".ds_store", "thumbs.db", "desktop.ini", ".nfo"}
 JUNK_EXT = {".part", ".parts", ".torrent", ".nfo"}
 COMPLETE_STATES = {"uploading", "stalledup", "queuedup", "pausedup", "forcedup", "checkingup"}
+TRACK_LIKE_PATTERN = re.compile(r"^(?:\d{1,3}|track\s*\d+|chapter\s*\d+|disc\s*\d+\s*track\s*\d+|part\s*\d+)$", re.IGNORECASE)
+GENERIC_AUDIO_FOLDER_PATTERN = re.compile(r"^(?:cd\s*\d*|disc\s*\d*|audio|mp3)$", re.IGNORECASE)
+
+
+@dataclass
+class BookGroup:
+    book_title: str
+    group_root: Path
+    files: list[Path]
+
+
+@dataclass
+class PlannedImport:
+    source_path: Path
+    destination_path: Path
+    book_title: str
 
 
 def infer_qbit_category(download: dict) -> str:
@@ -25,6 +42,25 @@ def normalize_match_text(value: str | None) -> str:
     text = re.sub(r"[_\-:;,.()[\]{}]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+def resolve_fallback_title(download: dict, content_path: Path, files: list[Path]) -> str:
+    if len(files) == 1:
+        return files[0].stem
+    if content_path.is_dir():
+        return content_path.name
+    qbit_name = Path(download.get("qbit_name") or "").stem
+    if qbit_name:
+        return qbit_name
+    return download.get("title") or "unknown"
+
+
+def is_track_like_name(path: Path) -> bool:
+    return bool(TRACK_LIKE_PATTERN.match(path.stem.strip().lower()))
+
+
+def is_generic_audio_folder_name(name: str) -> bool:
+    return bool(GENERIC_AUDIO_FOLDER_PATTERN.match(name.strip().lower()))
 
 
 async def recover_qbit_torrent_for_download(download: dict, qbit_client) -> dict | None:
@@ -96,21 +132,77 @@ def find_importable_files(content_path: str, media_type: str) -> list[Path]:
     return non_sample or files
 
 
-def build_destination_path(download: dict, source_path: str | Path, library_root: str) -> Path:
-    src = Path(source_path).resolve()
+def infer_book_groups(download: dict, content_path: Path, files: list[Path], media_type: str) -> list[BookGroup]:
+    if not files:
+        return []
+    content_root = Path(content_path).resolve()
+    if content_root.is_file():
+        f = files[0]
+        return [BookGroup(book_title=f.stem, group_root=f.parent, files=[f])]
+
+    in_root_files = [f for f in files if f.resolve().is_relative_to(content_root)]
+    top_level_files = [f for f in in_root_files if f.parent == content_root]
+    child_dirs: dict[Path, list[Path]] = {}
+    for f in in_root_files:
+        if f.parent == content_root:
+            continue
+        rel = f.relative_to(content_root)
+        first = content_root / rel.parts[0]
+        child_dirs.setdefault(first, []).append(f)
+
+    groups: list[BookGroup] = []
+    for child_dir, child_files in child_dirs.items():
+        title = child_dir.name
+        group_root = child_dir
+        if media_type == "audiobook" and is_generic_audio_folder_name(title) and content_root.name:
+            title = content_root.name
+            group_root = content_root
+        groups.append(BookGroup(book_title=title, group_root=group_root, files=sorted(child_files)))
+
+    if top_level_files:
+        sorted_top = sorted(top_level_files)
+        if media_type == "audiobook" and len(sorted_top) > 1:
+            track_like = sum(1 for f in sorted_top if is_track_like_name(f))
+            if track_like / len(sorted_top) >= 0.6:
+                book_title = content_root.name
+                if is_generic_audio_folder_name(book_title):
+                    book_title = Path(download.get("qbit_name") or "").stem or download.get("title") or "unknown"
+                groups.append(BookGroup(book_title=book_title, group_root=content_root, files=sorted_top))
+            else:
+                groups.extend(BookGroup(book_title=f.stem, group_root=f.parent, files=[f]) for f in sorted_top)
+        else:
+            groups.extend(BookGroup(book_title=f.stem, group_root=f.parent, files=[f]) for f in sorted_top)
+
+    if groups:
+        return groups
+
+    title = resolve_fallback_title(download, content_root, files)
+    return [BookGroup(book_title=title, group_root=content_root if content_root.is_dir() else files[0].parent, files=sorted(files))]
+
+
+def plan_imports(download: dict, content_path: str | Path, files: list[Path], library_root: str) -> list[PlannedImport]:
     root = Path(library_root).resolve()
-    title = safe_dirname(download.get("title") or download.get("qbit_name") or "unknown")
-    content_path = Path(download.get("content_path") or src).resolve()
-    rel = Path(safe_filename(src.name))
-    if content_path.is_dir():
-        try:
-            rel = Path(*[safe_dirname(p) for p in src.relative_to(content_path).parts])
-        except Exception:
-            rel = Path(safe_filename(src.name))
-    dest = (root / title / rel).resolve()
-    if root not in dest.parents and dest != root:
-        raise ValueError("Destination path escapes library root")
-    return dest
+    content_root = Path(content_path).resolve()
+    groups = infer_book_groups(download, content_root, files, download["media_type"])
+    planned: list[PlannedImport] = []
+    for group in groups:
+        safe_book_title = safe_dirname(group.book_title or resolve_fallback_title(download, content_root, group.files))
+        for src in group.files:
+            src = src.resolve()
+            try:
+                rel_parts = [safe_dirname(p) for p in src.relative_to(group.group_root).parts]
+            except Exception:
+                rel_parts = [safe_filename(src.name)]
+            if not rel_parts:
+                rel_parts = [safe_filename(src.name)]
+            rel = Path(*rel_parts)
+            if rel.is_absolute() or ".." in rel.parts:
+                rel = Path(safe_filename(src.name))
+            dst = (root / safe_book_title / rel).resolve()
+            if root not in dst.parents and dst != root:
+                raise ValueError("Destination path escapes library root")
+            planned.append(PlannedImport(source_path=src, destination_path=dst, book_title=safe_book_title))
+    return planned
 
 
 def hardlink_file(src: str | Path, dst: str | Path, conflict_policy: str, dry_run: bool) -> str:
@@ -148,19 +240,19 @@ async def import_download(download: dict, qbit_torrent: dict | None) -> str:
         if not files:
             update_download_import_state(download["id"], "failed", "No supported files found", completed=True)
             return "failed"
+        plans = plan_imports(download, content_path, files, root)
         ok = fail = skip = 0
-        for f in files:
-            dst = build_destination_path(download, f, root)
+        for plan in plans:
             try:
-                status = hardlink_file(f, dst, settings.import_conflict_policy, settings.import_dry_run)
-                record_imported_file(download["id"], str(f), str(dst), f.stat().st_size, "imported" if status == "linked" else "skipped")
+                status = hardlink_file(plan.source_path, plan.destination_path, settings.import_conflict_policy, settings.import_dry_run)
+                record_imported_file(download["id"], str(plan.source_path), str(plan.destination_path), plan.source_path.stat().st_size, "imported" if status == "linked" else "skipped")
                 if status == "linked":
                     ok += 1
                 else:
                     skip += 1
             except Exception as exc:
                 fail += 1
-                record_imported_file(download["id"], str(f), str(dst), None, "failed", str(exc))
+                record_imported_file(download["id"], str(plan.source_path), str(plan.destination_path), None, "failed", str(exc))
         final = "imported" if ok and not fail and not skip else "skipped" if skip and not ok and not fail else "partial" if (ok or skip) and fail else "failed"
         update_download_import_state(download["id"], final, None if final != "failed" else "Import failed", completed=True)
         return final

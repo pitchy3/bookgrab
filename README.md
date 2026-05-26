@@ -16,7 +16,7 @@
 
 - Not a Readarr/Sonarr replacement.
 - No monitoring, upgrades, library management, metadata matching, import/rename, or Calibre integration.
-- No background automation.
+- Optional completed-download hardlink importer for BookGrab-added torrents (disabled by default).
 
 ## Security warning
 
@@ -142,3 +142,34 @@ docker build -t BookGrab:local .
 - Configured source search endpoint accepts JSON payload as implemented.
 - Source response includes expected `data` list and download-hash field.
 - qBittorrent Web API v2 endpoints are reachable from container.
+
+
+## Optional completed-download importer
+
+Set `IMPORT_ENABLED=true` to enable a background polling importer that watches BookGrab-added torrents and hardlinks supported completed files into configured library paths.
+
+- Mode currently supports `hardlink` only.
+- Import is idempotent and does not move/delete/pause/remove torrents.
+- Source files remain in the qBittorrent download location for continued seeding.
+
+### Docker Compose example
+
+```yaml
+services:
+  bookgrab:
+    volumes:
+      - ./config:/config
+      - /mnt/media/downloads:/downloads
+      - /mnt/media/audiobooks:/library/audiobooks
+      - /mnt/media/ebooks:/library/ebooks
+    environment:
+      IMPORT_ENABLED: "true"
+      IMPORT_AUDIOBOOK_LIBRARY_PATH: /library/audiobooks
+      IMPORT_EBOOK_LIBRARY_PATH: /library/ebooks
+```
+
+Important limitations:
+- Hardlinks require source and destination to be on the same filesystem.
+- BookGrab must see the same download path qBittorrent reports.
+- If qBittorrent reports `/downloads/book/file.m4b`, BookGrab must also see `/downloads/book/file.m4b`.
+- If qBittorrent and BookGrab containers use different internal paths, align mounts so paths match.

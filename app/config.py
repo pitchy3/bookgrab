@@ -36,4 +36,17 @@ class Settings:
     database_path: str = os.getenv("DATABASE_PATH", "/config/app.db")
 
 
+    import_enabled: bool = os.getenv("IMPORT_ENABLED", "false").lower() == "true"
+    import_interval_seconds: int = max(int(os.getenv("IMPORT_INTERVAL_SECONDS", "300")), 30)
+    import_mode: str = os.getenv("IMPORT_MODE", "hardlink").lower()
+    import_conflict_policy: str = os.getenv("IMPORT_CONFLICT_POLICY", "skip").lower()
+    import_audiobook_library_path: str = os.getenv("IMPORT_AUDIOBOOK_LIBRARY_PATH", "")
+    import_ebook_library_path: str = os.getenv("IMPORT_EBOOK_LIBRARY_PATH", "")
+    import_audiobook_extensions: str = os.getenv("IMPORT_AUDIOBOOK_EXTENSIONS", ".m4b,.mp3,.m4a,.flac,.ogg,.opus,.aac")
+    import_ebook_extensions: str = os.getenv("IMPORT_EBOOK_EXTENSIONS", ".epub,.pdf,.mobi,.azw3,.cbz,.cbr")
+    import_min_completion_ratio: float = float(os.getenv("IMPORT_MIN_COMPLETION_RATIO", "1.0"))
+    import_require_seeding_or_complete: bool = os.getenv("IMPORT_REQUIRE_SEEDING_OR_COMPLETE", "true").lower() == "true"
+    import_dry_run: bool = os.getenv("IMPORT_DRY_RUN", "false").lower() == "true"
+
+
 settings = Settings()

@@ -62,13 +62,18 @@ class QbitClient:
                 await self._login(client)
                 before = await self.get_torrents(client)
                 resp = await client.post(f"{self.base_url}/api/v2/torrents/add", data=form_data, files=files)
-                after = await self.get_torrents(client)
             except httpx.HTTPError as exc:
                 raise QbitError("qBittorrent is unavailable") from exc
         if resp.status_code >= 400:
             raise QbitError("Failed to upload torrent to qBittorrent")
         if "Fails." in resp.text:
             raise QbitError("Torrent add failed (possibly duplicate)")
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                await self._login(client)
+                after = await self.get_torrents(client)
+        except httpx.HTTPError:
+            after = []
         old_hashes = {t["hash"] for t in before if t.get("hash")}
         candidates = [t for t in after if t.get("hash") not in old_hashes]
         selected = None

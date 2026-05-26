@@ -128,7 +128,7 @@ async def run_import_once(qbit_client=None) -> dict:
             mark_download_checked(d["id"], "waiting", "Torrent not found in qBittorrent")
             summary["waiting"] += 1
             continue
-        complete = t["progress"] >= settings.import_min_completion_ratio and (t["amount_left"] == 0 or t["progress"] >= 1.0)
+        complete = t["progress"] >= settings.import_min_completion_ratio
         if settings.import_require_seeding_or_complete:
             complete = complete and (t.get("state", "").lower() in COMPLETE_STATES)
         if not complete:

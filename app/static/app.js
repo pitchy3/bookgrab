@@ -3,17 +3,33 @@ const tbody = document.querySelector('#results tbody');
 const app = document.getElementById('app');
 const loginCard = document.getElementById('loginCard');
 
-function setStatus(msg, isErr=false){ statusEl.textContent = msg; statusEl.className = isErr ? 'err' : 'ok'; }
+let statusTimeoutId = null;
+
+function setStatus(msg, level='success'){
+  statusEl.textContent = msg;
+  statusEl.className = level === 'success' ? 'ok' : 'err';
+
+  if (statusTimeoutId) {
+    clearTimeout(statusTimeoutId);
+  }
+
+  const timeoutMs = level === 'success' ? 5000 : 10000;
+  statusTimeoutId = setTimeout(() => {
+    statusEl.textContent = '';
+    statusEl.className = '';
+    statusTimeoutId = null;
+  }, timeoutMs);
+}
 
 async function doSearch() {
   const query = document.getElementById('query').value.trim();
-  if (!query) return setStatus('Enter a query', true);
+  if (!query) return setStatus('Enter a query', 'warning');
   const media_type = document.getElementById('mediaType').value;
   const sort = document.getElementById('sort').value;
   const search_in = [...document.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
   const resp = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query, media_type, sort, search_in})});
   const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Search failed', true);
+  if (!resp.ok) return setStatus(data.detail || 'Search failed', 'error');
   renderResults(data.results || []);
 }
 
@@ -40,7 +56,7 @@ async function doAdd(evt){
   const media_type = evt.target.dataset.media;
   const resp = await fetch('/api/add', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, media_type})});
   const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Add failed', true);
+  if (!resp.ok) return setStatus(data.detail || 'Add failed', 'error');
   setStatus(data.message || 'Added');
 }
 
@@ -53,7 +69,7 @@ document.getElementById('loginBtn')?.addEventListener('click', async () => {
   const password = document.getElementById('password').value;
   const resp = await fetch('/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})});
   const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Login failed', true);
+  if (!resp.ok) return setStatus(data.detail || 'Login failed', 'error');
   app.classList.remove('hidden');
   loginCard?.classList.add('hidden');
   setStatus('Logged in');

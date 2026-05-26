@@ -7,7 +7,7 @@ let statusTimeoutId = null;
 
 function setStatus(msg, level='success'){
   statusEl.textContent = msg;
-  statusEl.className = level === 'error' ? 'err' : 'ok';
+  statusEl.className = level === 'success' ? 'ok' : 'err';
 
   if (statusTimeoutId) {
     clearTimeout(statusTimeoutId);

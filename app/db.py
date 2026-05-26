@@ -89,6 +89,34 @@ def mark_download_checked(download_id: int, status: str = "waiting", last_error:
         conn.commit()
 
 
+def update_download_qbit_info(download_id: int, qbit_hash: str | None = None, qbit_name: str | None = None, save_path: str | None = None, content_path: str | None = None, import_status: str | None = None, last_error: str | None = None) -> None:
+    fields = []
+    values: list[Any] = []
+    if qbit_hash is not None:
+        fields.append("qbit_hash=?")
+        values.append(qbit_hash)
+    if qbit_name is not None:
+        fields.append("qbit_name=?")
+        values.append(qbit_name)
+    if save_path is not None:
+        fields.append("save_path=?")
+        values.append(save_path)
+    if content_path is not None:
+        fields.append("content_path=?")
+        values.append(content_path)
+    if import_status is not None:
+        fields.append("import_status=?")
+        values.append(import_status)
+    fields.append("last_error=?")
+    values.append(last_error)
+    fields.append("last_checked_at=?")
+    values.append(datetime.now(UTC).isoformat())
+    values.append(download_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE downloads SET {', '.join(fields)} WHERE id=?", values)
+        conn.commit()
+
+
 def record_imported_file(download_id: int, source_path: str, destination_path: str, size_bytes: int | None, status: str, error: str | None = None) -> None:
     with get_conn() as conn:
         conn.execute(
@@ -105,4 +133,4 @@ def get_import_status(limit: int = 20) -> dict[str, Any]:
         counts = {row["import_status"]: row["c"] for row in counts_rows}
         recent = [dict(r) for r in conn.execute("SELECT * FROM downloads ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
         files = [dict(r) for r in conn.execute("SELECT * FROM imported_files ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
-        return {"counts": counts, "recent_downloads": recent, "recent_files": files}
+        return {"counts": counts, "recent_downloads": recent, "recent_imported_files": files, "recent_files": files}

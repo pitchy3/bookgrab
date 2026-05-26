@@ -86,8 +86,11 @@ async def startup() -> None:
         ) from exc
 
     if settings.import_enabled:
+        print("Importer: enabled")
         _validate_import_config()
         _importer_task = __import__("asyncio").create_task(importer_loop())
+    else:
+        print("Importer: disabled")
 
 
 @app.on_event("shutdown")

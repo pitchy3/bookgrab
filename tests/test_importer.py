@@ -1,5 +1,7 @@
 from pathlib import Path
+import asyncio
 
+from app import importer
 from app.importer import build_destination_path, find_importable_files, hardlink_file, is_supported_media_file
 
 
@@ -60,3 +62,80 @@ def test_directory_discovery_and_junk_ignore(tmp_path):
     names = {f.name for f in files}
     assert "book.m4b" in names
     assert "Thumbs.db" not in names
+
+
+class _Qbit:
+    def __init__(self, torrents=None, torrent=None):
+        self._torrents = torrents or []
+        self._torrent = torrent
+
+    async def get_torrents(self):
+        return self._torrents
+
+    async def get_torrent(self, _hash):
+        return self._torrent
+
+
+def test_recover_qbit_hash_exact_match(monkeypatch):
+    called = {}
+    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: called.update(kwargs))
+    d = {"id": 1, "title": "The Assassin's Blade", "media_type": "audiobook", "qbit_name": "The Assassin's Blade"}
+    q = _Qbit([{"hash": "h1", "name": "The Assassin's Blade.mp3", "category": "audiobooks", "content_path": "/x/The Assassin's Blade.mp3", "save_path": "/x"}])
+    out = asyncio.run(importer.recover_qbit_torrent_for_download(d, q))
+    assert out["hash"] == "h1"
+    assert called["qbit_hash"] == "h1"
+
+
+def test_recover_qbit_hash_author_prefix(monkeypatch):
+    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: None)
+    d = {"id": 1, "title": "The Assassin's Blade", "media_type": "audiobook", "qbit_name": "The Assassin's Blade"}
+    q = _Qbit([{"hash": "h1", "name": "Sarah J. Maas - The Assassin's Blade.mp3", "category": "audiobooks", "content_path": "/x/Sarah J. Maas - The Assassin's Blade.mp3", "save_path": "/x"}])
+    out = asyncio.run(importer.recover_qbit_torrent_for_download(d, q))
+    assert out["hash"] == "h1"
+
+
+def test_recover_prefers_category_and_ambiguous(monkeypatch):
+    errors = []
+    monkeypatch.setattr(importer, "mark_download_checked", lambda _id, _s, e=None: errors.append(e))
+    d = {"id": 1, "title": "Book", "media_type": "audiobook"}
+    q = _Qbit([
+        {"hash": "h1", "name": "Author - Book.mp3", "category": "audiobooks", "content_path": "/x/Author - Book.mp3"},
+        {"hash": "h2", "name": "Other - Book.mp3", "category": "audiobooks", "content_path": "/x/Other - Book.mp3"},
+        {"hash": "h3", "name": "Book.pdf", "category": "ebooks", "content_path": "/x/Book.pdf"},
+    ])
+    out = asyncio.run(importer.recover_qbit_torrent_for_download(d, q))
+    assert out is None
+    assert "ambiguous" in errors[-1]
+
+
+def test_recover_no_match_sets_error(monkeypatch):
+    errors = []
+    monkeypatch.setattr(importer, "mark_download_checked", lambda _id, _s, e=None: errors.append(e))
+    d = {"id": 1, "title": "Unique Title", "media_type": "audiobook"}
+    out = asyncio.run(importer.recover_qbit_torrent_for_download(d, _Qbit([{"hash": "h", "name": "Different", "category": "audiobooks"}])))
+    assert out is None
+    assert "no matching" in errors[-1]
+
+
+def test_run_import_once_recovers_and_uses_fresh_content_path(monkeypatch):
+    monkeypatch.setattr(importer.settings, "import_enabled", True)
+    monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", False)
+    monkeypatch.setattr(importer.settings, "import_min_completion_ratio", 1.0)
+    monkeypatch.setattr(importer, "get_pending_imports", lambda: [{"id": 1, "title": "Book", "media_type": "audiobook", "qbit_hash": None, "content_path": None}])
+    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(importer, "mark_download_checked", lambda *args, **kwargs: None)
+
+    seen = {}
+
+    async def _fake_import_download(download, _torrent):
+        seen["content_path"] = download.get("content_path")
+        return "imported"
+
+    monkeypatch.setattr(importer, "import_download", _fake_import_download)
+    q = _Qbit(
+        torrents=[{"hash": "h1", "name": "Author - Book.mp3", "category": "audiobooks", "content_path": "/fresh/book.mp3", "save_path": "/fresh", "progress": 1.0, "state": "stalledUP", "amount_left": 0}],
+        torrent={"hash": "h1", "name": "Author - Book.mp3", "category": "audiobooks", "content_path": "/fresh/book.mp3", "save_path": "/fresh", "progress": 1.0, "state": "stalledUP", "amount_left": 0},
+    )
+    summary = asyncio.run(importer.run_import_once(q))
+    assert summary["processed"] == 1
+    assert seen["content_path"] == "/fresh/book.mp3"

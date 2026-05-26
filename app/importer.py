@@ -201,7 +201,7 @@ async def run_import_once(qbit_client=None) -> dict:
         progress = float(t.get("progress", 0.0) or 0.0)
         amount_left = int(t.get("amount_left", 0) or 0)
         state = str(t.get("state", ""))
-        complete = progress >= settings.import_min_completion_ratio and amount_left == 0
+        complete = progress >= settings.import_min_completion_ratio
         if settings.import_require_seeding_or_complete:
             complete = complete and (state.lower() in COMPLETE_STATES)
         print(f"Importer: completion check id={d['id']} progress={progress} state={state} amount_left={amount_left} complete={complete}")

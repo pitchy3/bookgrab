@@ -167,3 +167,20 @@ def test_run_import_once_waiting_reason_includes_progress_state_amount(monkeypat
     assert "progress=1.0" in captured["error"]
     assert "state=downloading" in captured["error"]
     assert "amount_left=0" in captured["error"]
+
+def test_run_import_once_respects_configured_completion_ratio_without_amount_left_gate(monkeypatch):
+    monkeypatch.setattr(importer.settings, "import_enabled", True)
+    monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", False)
+    monkeypatch.setattr(importer.settings, "import_min_completion_ratio", 0.95)
+    monkeypatch.setattr(importer, "get_pending_imports", lambda: [{"id": 1, "title": "Book", "media_type": "audiobook", "qbit_hash": "h1", "content_path": "/x"}])
+    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: None)
+    monkeypatch.setattr(importer, "mark_download_checked", lambda *args, **kwargs: None)
+
+    async def _fake_import_download(_download, _torrent):
+        return "imported"
+
+    monkeypatch.setattr(importer, "import_download", _fake_import_download)
+    q = _Qbit(torrent={"hash": "h1", "name": "Book", "category": "audiobooks", "content_path": "/x", "save_path": "/x", "progress": 0.96, "state": "downloading", "amount_left": 123})
+    summary = asyncio.run(importer.run_import_once(q))
+    assert summary["processed"] == 1
+    assert summary["imported"] == 1

@@ -132,7 +132,6 @@ def test_recover_does_not_use_reverse_generic_substring(monkeypatch):
 def test_run_import_once_recovers_and_uses_fresh_content_path(monkeypatch):
     monkeypatch.setattr(importer.settings, "import_enabled", True)
     monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", False)
-    monkeypatch.setattr(importer.settings, "import_min_completion_ratio", 1.0)
     monkeypatch.setattr(importer, "get_pending_imports", lambda: [{"id": 1, "title": "Book", "media_type": "audiobook", "qbit_hash": None, "content_path": None}])
     monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: None)
     monkeypatch.setattr(importer, "mark_download_checked", lambda *args, **kwargs: None)
@@ -156,7 +155,6 @@ def test_run_import_once_recovers_and_uses_fresh_content_path(monkeypatch):
 def test_run_import_once_waiting_reason_includes_progress_state_amount(monkeypatch):
     monkeypatch.setattr(importer.settings, "import_enabled", True)
     monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", True)
-    monkeypatch.setattr(importer.settings, "import_min_completion_ratio", 0.95)
     monkeypatch.setattr(importer, "get_pending_imports", lambda: [{"id": 1, "title": "Book", "media_type": "audiobook", "qbit_hash": "h1", "content_path": "/x"}])
     captured = {}
     monkeypatch.setattr(importer, "mark_download_checked", lambda _id, _s, e=None: captured.setdefault("error", e))
@@ -168,19 +166,23 @@ def test_run_import_once_waiting_reason_includes_progress_state_amount(monkeypat
     assert "state=downloading" in captured["error"]
     assert "amount_left=0" in captured["error"]
 
-def test_run_import_once_respects_configured_completion_ratio_without_amount_left_gate(monkeypatch):
+
+
+def test_run_import_once_logs_diagnostic_when_amount_left_zero_but_progress_imperfect(monkeypatch):
     monkeypatch.setattr(importer.settings, "import_enabled", True)
     monkeypatch.setattr(importer.settings, "import_require_seeding_or_complete", False)
-    monkeypatch.setattr(importer.settings, "import_min_completion_ratio", 0.95)
     monkeypatch.setattr(importer, "get_pending_imports", lambda: [{"id": 1, "title": "Book", "media_type": "audiobook", "qbit_hash": "h1", "content_path": "/x"}])
-    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: None)
+
+    updates = []
+    monkeypatch.setattr(importer, "update_download_qbit_info", lambda *args, **kwargs: updates.append(kwargs))
     monkeypatch.setattr(importer, "mark_download_checked", lambda *args, **kwargs: None)
 
     async def _fake_import_download(_download, _torrent):
         return "imported"
 
     monkeypatch.setattr(importer, "import_download", _fake_import_download)
-    q = _Qbit(torrent={"hash": "h1", "name": "Book", "category": "audiobooks", "content_path": "/x", "save_path": "/x", "progress": 0.96, "state": "downloading", "amount_left": 123})
+    q = _Qbit(torrent={"hash": "h1", "name": "Book", "category": "audiobooks", "content_path": "/x", "save_path": "/x", "progress": 0.9999, "state": "downloading", "amount_left": 0})
     summary = asyncio.run(importer.run_import_once(q))
     assert summary["processed"] == 1
     assert summary["imported"] == 1
+    assert any("amount_left=0 but progress=0.9999" in (u.get("last_error") or "") for u in updates)

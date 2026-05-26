@@ -44,7 +44,7 @@ class Settings:
     import_ebook_library_path: str = os.getenv("IMPORT_EBOOK_LIBRARY_PATH", "")
     import_audiobook_extensions: str = os.getenv("IMPORT_AUDIOBOOK_EXTENSIONS", ".m4b,.mp3,.m4a,.flac,.ogg,.opus,.aac")
     import_ebook_extensions: str = os.getenv("IMPORT_EBOOK_EXTENSIONS", ".epub,.pdf,.mobi,.azw3,.cbz,.cbr")
-    import_min_completion_ratio: float = float(os.getenv("IMPORT_MIN_COMPLETION_RATIO", "1.0"))
+    import_min_completion_ratio_legacy_present: bool = "IMPORT_MIN_COMPLETION_RATIO" in os.environ
     import_require_seeding_or_complete: bool = os.getenv("IMPORT_REQUIRE_SEEDING_OR_COMPLETE", "true").lower() == "true"
     import_dry_run: bool = os.getenv("IMPORT_DRY_RUN", "false").lower() == "true"
 

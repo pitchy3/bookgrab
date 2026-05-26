@@ -33,8 +33,6 @@ def _validate_import_config() -> None:
         raise RuntimeError("IMPORT_MODE currently supports only 'hardlink'")
     if settings.import_conflict_policy not in {"skip", "replace"}:
         raise RuntimeError("IMPORT_CONFLICT_POLICY must be 'skip' or 'replace'")
-    if settings.import_min_completion_ratio < 0 or settings.import_min_completion_ratio > 1:
-        raise RuntimeError("IMPORT_MIN_COMPLETION_RATIO must be between 0.0 and 1.0")
     if not settings.import_audiobook_library_path and not settings.import_ebook_library_path:
         raise RuntimeError("At least one of IMPORT_AUDIOBOOK_LIBRARY_PATH or IMPORT_EBOOK_LIBRARY_PATH must be set when importer is enabled")
 
@@ -84,6 +82,9 @@ async def startup() -> None:
             f"Current UID:GID is {uid}:{gid}. "
             "On the host, try: mkdir -p ./config && chown -R <uid>:<gid> ./config && chmod -R u+rwX,g+rwX ./config"
         ) from exc
+
+    if settings.import_min_completion_ratio_legacy_present:
+        print("Startup warning: IMPORT_MIN_COMPLETION_RATIO is deprecated and ignored; importer completion now requires amount_left == 0")
 
     if settings.import_enabled:
         print("Importer: enabled")

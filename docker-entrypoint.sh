@@ -39,7 +39,7 @@ if [ "$(id -u)" -eq 0 ]; then
     fi
 
     chown -R "$PUID:$PGID" /config
-    exec su -s /bin/sh -c 'exec "$@"' app -- "$@"
+    exec su -s /bin/sh -c 'exec "$@"' app -- sh "$@"
 fi
 
 exec "$@"

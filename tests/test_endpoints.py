@@ -1,3 +1,4 @@
+from pathlib import Path
 import time
 
 from fastapi.testclient import TestClient
@@ -76,7 +77,7 @@ def test_api_add_maps_qbit_login_failures_to_502(monkeypatch):
     assert response.json()["detail"] == "qBittorrent login failed"
 
 
-def test_search_response_escapes_xss_in_title(monkeypatch):
+def test_search_renderer_escapes_xss_in_title(monkeypatch):
     monkeypatch.setattr(main.settings, "app_auth_enabled", False)
 
     async def _fake_search(**kwargs):
@@ -88,5 +89,6 @@ def test_search_response_escapes_xss_in_title(monkeypatch):
     search = client.post("/api/search", json={"query": "xss", "media_type": "audiobook", "search_in": ["title"], "sort": "seedersDesc"})
     assert search.status_code == 200
 
-    html = client.get("/").text
-    assert "<script>alert(1)</script>" not in html
+    app_js = Path("app/static/app.js").read_text()
+    assert "titleDiv.textContent = r.title || " in app_js
+    assert "titleDiv.innerHTML" not in app_js

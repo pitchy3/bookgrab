@@ -63,7 +63,7 @@ def record_download(**kwargs: Any) -> int:
 
 def get_pending_imports(limit: int = 50) -> list[sqlite3.Row]:
     with get_conn() as conn:
-        cur = conn.execute("SELECT * FROM downloads WHERE import_status IN ('queued','waiting','partial','failed') ORDER BY id ASC LIMIT ?", (limit,))
+        cur = conn.execute("SELECT * FROM downloads WHERE import_status IN ('queued','waiting') ORDER BY id ASC LIMIT ?", (limit,))
         return cur.fetchall()
 
 

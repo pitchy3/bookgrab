@@ -6,8 +6,10 @@ def test_db_helpers(monkeypatch, tmp_path):
     monkeypatch.setattr(db.settings, "database_path", str(db_file))
     db.init_db()
     d_id = db.record_download(mam_id="1", title="T", media_type="audiobook", import_status="queued")
+    db.record_download(mam_id="2", title="T2", media_type="audiobook", import_status="failed")
+    db.record_download(mam_id="3", title="T3", media_type="audiobook", import_status="partial")
     rows = db.get_pending_imports()
-    assert rows and rows[0]["id"] == d_id
+    assert [r["id"] for r in rows] == [d_id]
     db.mark_download_checked(d_id)
     db.update_download_import_state(d_id, "imported")
     db.record_imported_file(d_id, "/a", "/b", 1, "imported")

@@ -24,6 +24,10 @@
 
 Do not expose this app directly to the internet unless it is protected by strong authentication and HTTPS through a trusted reverse proxy.
 
+## Usage / Etiquette
+
+BookGrab is intended for personal use only by users running their own instance with their own MAM account/session. It is not affiliated with MAM. It does not provide a hosted service, shared access, automation for mass downloading, ratio avoidance, or account sharing. Use it responsibly and follow MAM rules.
+
 ## Quick start
 
 1. Copy env file:
@@ -67,6 +71,8 @@ See `.env.example` for full list.
 
 Important:
 - Fill source authentication variables in `.env` so backend source requests are authenticated.
+  - MAM_COOKIE=mam_id=very-long-string
+  - In MAM, create a new session consistent with your settings for hosting the app. Copy only the token value and set `MAM_COOKIE=mam_id=<token>` (or put the bare token in `MAM_UID`). Never share this value.
 - Fill `QBIT_*` values to match your qBittorrent instance.
 - Set `PUID`/`PGID` to match the host user/group that owns your bind-mounted `config` directory (defaults are `1000:1000`).
 - `PUID`/`PGID` are applied at container startup, so changing them in `.env` works even without rebuilding an existing image.

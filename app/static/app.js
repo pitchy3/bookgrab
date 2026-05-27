@@ -52,12 +52,43 @@ function renderResults(results){
 }
 
 async function doAdd(evt){
-  const id = Number(evt.target.dataset.id);
-  const media_type = evt.target.dataset.media;
-  const resp = await fetch('/api/add', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, media_type})});
-  const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Add failed', 'error');
-  setStatus(data.message || 'Added');
+  const button = evt.currentTarget;
+  const id = Number(button.dataset.id);
+  const media_type = button.dataset.media;
+  const resetDelayMs = 1500;
+
+  button.disabled = true;
+  button.classList.add('is-adding');
+  button.textContent = 'Adding...';
+
+  try {
+    const resp = await fetch('/api/add', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, media_type})});
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      button.classList.remove('is-adding');
+      button.classList.add('is-failed');
+      button.textContent = 'Failed';
+      setStatus(data.detail || 'Add failed', 'error');
+      return;
+    }
+
+    button.classList.remove('is-adding');
+    button.classList.add('is-success');
+    button.textContent = 'Success';
+    setStatus(data.message || 'Added');
+  } catch (error) {
+    button.classList.remove('is-adding');
+    button.classList.add('is-failed');
+    button.textContent = 'Failed';
+    setStatus('Add failed', 'error');
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.classList.remove('is-adding', 'is-success', 'is-failed');
+      button.textContent = 'Add to queue';
+    }, resetDelayMs);
+  }
 }
 
 document.getElementById('searchBtn')?.addEventListener('click', doSearch);

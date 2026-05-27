@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 import pytest
 
@@ -18,6 +19,7 @@ def test_api_search_does_not_leak_private_torrent_id(monkeypatch):
     monkeypatch.setattr(main, "_require_login", lambda request: None)
     monkeypatch.setattr(main.mam_client, "search", _fake_search)
     main._search_cache.clear()
+    main._search_cache_updated_at.clear()
 
     payload = SearchRequest(query="book", media_type="audiobook", search_in=["title"], sort="seedersDesc")
     result = asyncio.run(main.api_search(payload, _Req()))
@@ -44,7 +46,9 @@ def test_api_add_uses_cached_torrent_id(monkeypatch):
     monkeypatch.setattr(main, "record_download", lambda *args, **kwargs: None)
 
     main._search_cache.clear()
+    main._search_cache_updated_at.clear()
     main._search_cache["audiobook:test:seedersDesc"] = {522748: {"id": 522748, "title": "Book", "_torrent_id": "522748"}}
+    main._search_cache_updated_at["audiobook:test:seedersDesc"] = time.time()
 
     result = asyncio.run(main.api_add(AddRequest(id=522748, media_type="audiobook"), _Req()))
 
@@ -57,7 +61,9 @@ def test_api_add_missing_torrent_id_raises_helpful_error(monkeypatch):
     monkeypatch.setattr(main, "add_history", lambda *args, **kwargs: None)
 
     main._search_cache.clear()
+    main._search_cache_updated_at.clear()
     main._search_cache["audiobook:test:seedersDesc"] = {522748: {"id": 522748, "title": "Book"}}
+    main._search_cache_updated_at["audiobook:test:seedersDesc"] = time.time()
 
     with pytest.raises(Exception) as exc:
         asyncio.run(main.api_add(AddRequest(id=522748, media_type="audiobook"), _Req()))
@@ -68,3 +74,38 @@ def test_api_add_missing_torrent_id_raises_helpful_error(monkeypatch):
     assert "mam_session" not in detail
     assert "mam_id" not in detail
     assert "cookie" not in detail.lower()
+
+
+def test_prune_search_cache_removes_expired_entries(monkeypatch):
+    monkeypatch.setattr(main.settings, "search_cache_ttl_seconds", 10)
+    monkeypatch.setattr(main.settings, "search_cache_max_entries", 5)
+    main._search_cache.clear()
+    main._search_cache_updated_at.clear()
+    main._search_cache["old"] = {1: {"id": 1}}
+    main._search_cache["new"] = {2: {"id": 2}}
+    main._search_cache_updated_at["old"] = 100.0
+    main._search_cache_updated_at["new"] = 195.0
+
+    main._prune_search_cache(now=210.0)
+
+    assert "old" not in main._search_cache
+    assert "new" not in main._search_cache
+
+
+def test_prune_search_cache_enforces_max_entries(monkeypatch):
+    monkeypatch.setattr(main.settings, "search_cache_ttl_seconds", 10_000)
+    monkeypatch.setattr(main.settings, "search_cache_max_entries", 2)
+    main._search_cache.clear()
+    main._search_cache_updated_at.clear()
+    main._search_cache["k1"] = {1: {"id": 1}}
+    main._search_cache["k2"] = {2: {"id": 2}}
+    main._search_cache["k3"] = {3: {"id": 3}}
+    main._search_cache_updated_at["k1"] = 100.0
+    main._search_cache_updated_at["k2"] = 200.0
+    main._search_cache_updated_at["k3"] = 300.0
+
+    main._prune_search_cache(now=350.0)
+
+    assert "k1" not in main._search_cache
+    assert "k2" in main._search_cache
+    assert "k3" in main._search_cache

@@ -211,7 +211,7 @@ def plan_imports(download: dict, content_path: str | Path, files: list[Path], li
     for group in groups:
         safe_book_title = safe_dirname(group.book_title or resolve_fallback_title(download, content_root, group.files))
         for src in group.files:
-            src = src.resolve()
+            src = src.absolute()
             try:
                 rel_parts = [safe_dirname(p) for p in src.relative_to(group.group_root).parts]
             except Exception:

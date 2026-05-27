@@ -233,6 +233,22 @@ def test_plan_single_file_audiobook(tmp_path):
     assert out == [str((tmp_path / "library" / "audiobooks" / "Project Hail Mary" / "Project Hail Mary.m4b").resolve())]
 
 
+def test_plan_imports_preserves_symlink_source_for_later_rejection(tmp_path):
+    root = tmp_path / "downloads" / "Book"
+    root.mkdir(parents=True)
+    outside = tmp_path / "outside.m4b"
+    outside.write_bytes(b"x")
+    linked = root / "Book.m4b"
+    linked.symlink_to(outside)
+
+    d = {"title": "Book", "qbit_name": "Book", "media_type": "audiobook"}
+    plans = plan_imports(d, root, [linked], str(tmp_path / "library" / "audiobooks"))
+
+    assert len(plans) == 1
+    assert plans[0].source_path == linked.absolute()
+    assert plans[0].source_path.is_symlink()
+
+
 def test_plan_verified_throne_of_glass_top_level_m4b_books(tmp_path):
     root = tmp_path / "downloads" / "Throne of Glass collection"
     root.mkdir(parents=True)

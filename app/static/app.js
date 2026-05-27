@@ -84,28 +84,48 @@ function renderResults(results){
     formatRow.appendChild(document.createTextNode(` ${r.filetypes || ''}${sizeSuffix}`));
     detailsTd.appendChild(formatRow);
 
-    const peersTd = document.createElement('td');
+    const statusTd = document.createElement('td');
+    const availabilityRow = document.createElement('div');
+    availabilityRow.className = 'status-row';
+    const availabilityLabel = document.createElement('span');
+    availabilityLabel.className = 'field-label';
+    availabilityLabel.textContent = 'Availability:';
     const seeders = document.createElement('span');
     seeders.className = 'peer-pill';
     seeders.textContent = `${r.seeders} seeders`;
-    const br = document.createElement('br');
     const leechers = document.createElement('span');
     leechers.className = 'peer-muted';
     leechers.textContent = `${r.leechers} leechers`;
-    peersTd.append(seeders, br, leechers);
+    availabilityRow.append(availabilityLabel, document.createTextNode(' '), seeders, document.createTextNode(' '), leechers);
 
-    const flagsTd = document.createElement('td');
+    const highlightsRow = document.createElement('div');
+    highlightsRow.className = 'status-row';
+    const highlightsLabel = document.createElement('span');
+    highlightsLabel.className = 'field-label';
+    highlightsLabel.textContent = 'Highlights:';
+    highlightsRow.appendChild(highlightsLabel);
+
+    let hasHighlight = false;
     flags.forEach(flag => {
-      flagsTd.appendChild(createBadge(flag, 'warn'));
-      flagsTd.appendChild(document.createTextNode(' '));
+      hasHighlight = true;
+      highlightsRow.appendChild(document.createTextNode(' '));
+      highlightsRow.appendChild(createBadge(flag, 'warn'));
     });
     if (r.free) {
-      flagsTd.appendChild(createBadge('freeleech', 'ok'));
-      flagsTd.appendChild(document.createTextNode(' '));
+      hasHighlight = true;
+      highlightsRow.appendChild(document.createTextNode(' '));
+      highlightsRow.appendChild(createBadge('freeleech', 'ok'));
     }
     if (r.vip) {
-      flagsTd.appendChild(createBadge('vip', 'vip'));
+      hasHighlight = true;
+      highlightsRow.appendChild(document.createTextNode(' '));
+      highlightsRow.appendChild(createBadge('vip', 'vip'));
     }
+    if (!hasHighlight) {
+      highlightsRow.appendChild(document.createTextNode(' -'));
+    }
+
+    statusTd.append(availabilityRow, highlightsRow);
 
     const actionTd = document.createElement('td');
     const button = document.createElement('button');
@@ -116,7 +136,7 @@ function renderResults(results){
     button.onclick = doAdd;
     actionTd.appendChild(button);
 
-    tr.append(titleTd, detailsTd, peersTd, flagsTd, actionTd);
+    tr.append(titleTd, detailsTd, statusTd, actionTd);
     tbody.appendChild(tr);
   });
 }

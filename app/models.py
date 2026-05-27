@@ -44,6 +44,7 @@ class NormalizedResult(BaseModel):
     narrator: str = ""
     series: str = ""
     filetypes: str = ""
+    filetype: str = ""
     size: str = ""
     seeders: int = 0
     leechers: int = 0

@@ -31,6 +31,8 @@ class Settings:
     default_media_type: str = os.getenv("DEFAULT_MEDIA_TYPE", "audiobook")
     default_sort: str = os.getenv("DEFAULT_SORT", "seedersDesc")
     default_search_type: str = os.getenv("DEFAULT_SEARCH_TYPE", "active")
+    search_cache_ttl_seconds: int = max(int(os.getenv("SEARCH_CACHE_TTL_SECONDS", "1800")), 1)
+    search_cache_max_entries: int = max(int(os.getenv("SEARCH_CACHE_MAX_ENTRIES", "200")), 1)
 
     config_dir: str = os.getenv("CONFIG_DIR", "/config")
     database_path: str = os.getenv("DATABASE_PATH", "/config/app.db")

@@ -26,6 +26,7 @@ templates = Jinja2Templates(directory="app/templates")
 mam_client = MamClient()
 qbit_client = QbitClient()
 _search_cache: dict[str, dict[int, dict[str, Any]]] = {}
+_search_cache_updated_at: dict[str, float] = {}
 _importer_task = None
 _SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
 
@@ -80,6 +81,26 @@ def _is_logged_in(request: Request) -> bool:
 def _require_login(request: Request) -> None:
     if not _is_logged_in(request):
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+def _prune_search_cache(now: float | None = None) -> None:
+    current = now if now is not None else time.time()
+    ttl = settings.search_cache_ttl_seconds
+    max_entries = settings.search_cache_max_entries
+
+    expired_keys = [key for key, updated_at in _search_cache_updated_at.items() if (current - updated_at) > ttl]
+    for key in expired_keys:
+        _search_cache.pop(key, None)
+        _search_cache_updated_at.pop(key, None)
+
+    if len(_search_cache_updated_at) <= max_entries:
+        return
+
+    keys_by_oldest = sorted(_search_cache_updated_at.items(), key=lambda item: item[1])
+    keys_to_remove = len(_search_cache_updated_at) - max_entries
+    for key, _ in keys_by_oldest[:keys_to_remove]:
+        _search_cache.pop(key, None)
+        _search_cache_updated_at.pop(key, None)
 
 
 @app.on_event("startup")
@@ -169,6 +190,7 @@ async def health() -> dict[str, str | bool]:
 @app.post("/api/search")
 async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]:
     _require_login(request)
+    _prune_search_cache()
     try:
         rows = await mam_client.search(
             query=payload.query,
@@ -186,13 +208,17 @@ async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]
         per_id[row["id"]] = row
         safe = {k: v for k, v in row.items() if k != "_torrent_id"}
         sanitized.append(safe)
-    _search_cache[f"{payload.media_type}:{payload.query.lower()}:{payload.sort}"] = per_id
+    cache_key = f"{payload.media_type}:{payload.query.lower()}:{payload.sort}"
+    _search_cache[cache_key] = per_id
+    _search_cache_updated_at[cache_key] = time.time()
+    _prune_search_cache()
     return {"results": sanitized}
 
 
 @app.post("/api/add")
 async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
     _require_login(request)
+    _prune_search_cache()
 
     matched: dict[str, Any] | None = None
     cached_media_type: str | None = None

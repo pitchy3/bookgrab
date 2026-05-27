@@ -202,9 +202,11 @@ services:
       - ./config:/config
       - /Volume2/Media:/downloads
     ports:
-      - 8787:8787
+      - 127.0.0.1:8787:8787
     restart: unless-stopped
 ```
+
+To access BookGrab from another device on your LAN, intentionally change this to `8787:8787` or place it behind a trusted reverse proxy with HTTPS and strong authentication. Do not expose it directly to the internet.
 
 Important limitations:
 - Hardlinks require source and destination to be on the same filesystem.

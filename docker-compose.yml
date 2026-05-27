@@ -7,7 +7,7 @@ services:
         PGID: ${PGID:-1000}
     container_name: bookgrab
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
     env_file:
       - .env
     environment:

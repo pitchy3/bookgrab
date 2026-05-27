@@ -7,8 +7,6 @@ from dataclasses import dataclass
 
 @dataclass
 class Settings:
-    app_port: int = int(os.getenv("APP_PORT", "8787"))
-    app_bind: str = os.getenv("APP_BIND", "0.0.0.0")
     app_auth_enabled: bool = os.getenv("APP_AUTH_ENABLED", "true").lower() == "true"
     app_username: str = os.getenv("APP_USERNAME", "admin")
     app_password: str = os.getenv("APP_PASSWORD", "change-me")

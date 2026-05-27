@@ -22,3 +22,5 @@ tr td:last-child{border-right:1px solid rgba(148,163,184,.2);border-radius:0 10p
 .add-btn.is-success{background:linear-gradient(135deg,#16a34a,#22c55e)}
 .add-btn.is-failed{background:linear-gradient(135deg,#dc2626,#ef4444)}
 .err{color:#fca5a5}.ok{color:#86efac}.hidden{display:none}
+
+.status-row{margin:.1rem 0 .35rem 0}.status-row:last-child{margin-bottom:0}

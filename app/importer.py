@@ -12,8 +12,9 @@ from app.db import get_pending_imports, mark_download_checked, record_imported_f
 JUNK = {".ds_store", "thumbs.db", "desktop.ini", ".nfo"}
 JUNK_EXT = {".part", ".parts", ".torrent", ".nfo"}
 COMPLETE_STATES = {"uploading", "stalledup", "queuedup", "pausedup", "forcedup", "checkingup"}
-TRACK_LIKE_PATTERN = re.compile(r"^(?:\d{1,3}|track\s*\d+|chapter\s*\d+|disc\s*\d+\s*track\s*\d+|part\s*\d+)$", re.IGNORECASE)
 GENERIC_AUDIO_FOLDER_PATTERN = re.compile(r"^(?:cd\s*\d*|disc\s*\d*|audio|mp3)$", re.IGNORECASE)
+AUDIO_SPLIT_EXTENSIONS = {".m4b"}
+AUDIO_GROUP_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
 
 
 @dataclass
@@ -53,10 +54,6 @@ def resolve_fallback_title(download: dict, content_path: Path, files: list[Path]
     if qbit_name:
         return qbit_name
     return download.get("title") or "unknown"
-
-
-def is_track_like_name(path: Path) -> bool:
-    return bool(TRACK_LIKE_PATTERN.match(path.stem.strip().lower()))
 
 
 def is_generic_audio_folder_name(name: str) -> bool:
@@ -137,39 +134,42 @@ def infer_book_groups(download: dict, content_path: Path, files: list[Path], med
         return []
     content_root = Path(content_path).resolve()
     if content_root.is_file():
-        f = files[0]
+        f = files[0].resolve()
         return [BookGroup(book_title=f.stem, group_root=f.parent, files=[f])]
 
-    in_root_files = [f for f in files if f.resolve().is_relative_to(content_root)]
+    in_root_files = [f.resolve() for f in files if f.resolve().is_relative_to(content_root)]
     top_level_files = [f for f in in_root_files if f.parent == content_root]
     child_dirs: dict[Path, list[Path]] = {}
     for f in in_root_files:
-        if f.parent == content_root:
-            continue
         rel = f.relative_to(content_root)
-        first = content_root / rel.parts[0]
-        child_dirs.setdefault(first, []).append(f)
+        if len(rel.parts) == 1:
+            continue
+        child_dir = content_root / rel.parts[0]
+        child_dirs.setdefault(child_dir, []).append(f)
 
     groups: list[BookGroup] = []
-    for child_dir, child_files in child_dirs.items():
+    for child_dir in sorted(child_dirs):
+        child_files = sorted(child_dirs[child_dir])
         title = child_dir.name
         group_root = child_dir
         if media_type == "audiobook" and is_generic_audio_folder_name(title) and content_root.name:
             title = content_root.name
             group_root = content_root
-        groups.append(BookGroup(book_title=title, group_root=group_root, files=sorted(child_files)))
+        groups.append(BookGroup(book_title=title, group_root=group_root, files=child_files))
 
     if top_level_files:
         sorted_top = sorted(top_level_files)
-        if media_type == "audiobook" and len(sorted_top) > 1:
-            track_like = sum(1 for f in sorted_top if is_track_like_name(f))
-            if track_like / len(sorted_top) >= 0.6:
+        if media_type == "audiobook":
+            split_files = [f for f in sorted_top if f.suffix.lower() in AUDIO_SPLIT_EXTENSIONS]
+            grouped_files = [f for f in sorted_top if f.suffix.lower() in AUDIO_GROUP_EXTENSIONS]
+            other_files = [f for f in sorted_top if f not in split_files and f not in grouped_files]
+            groups.extend(BookGroup(book_title=f.stem, group_root=f.parent, files=[f]) for f in split_files)
+            if grouped_files:
                 book_title = content_root.name
                 if is_generic_audio_folder_name(book_title):
                     book_title = Path(download.get("qbit_name") or "").stem or download.get("title") or "unknown"
-                groups.append(BookGroup(book_title=book_title, group_root=content_root, files=sorted_top))
-            else:
-                groups.extend(BookGroup(book_title=f.stem, group_root=f.parent, files=[f]) for f in sorted_top)
+                groups.append(BookGroup(book_title=book_title, group_root=content_root, files=grouped_files))
+            groups.extend(BookGroup(book_title=f.stem, group_root=f.parent, files=[f]) for f in other_files)
         else:
             groups.extend(BookGroup(book_title=f.stem, group_root=f.parent, files=[f]) for f in sorted_top)
 
@@ -177,7 +177,8 @@ def infer_book_groups(download: dict, content_path: Path, files: list[Path], med
         return groups
 
     title = resolve_fallback_title(download, content_root, files)
-    return [BookGroup(book_title=title, group_root=content_root if content_root.is_dir() else files[0].parent, files=sorted(files))]
+    group_root = content_root if content_root.is_dir() else files[0].parent
+    return [BookGroup(book_title=title, group_root=group_root, files=sorted(files))]
 
 
 def plan_imports(download: dict, content_path: str | Path, files: list[Path], library_root: str) -> list[PlannedImport]:
@@ -199,7 +200,7 @@ def plan_imports(download: dict, content_path: str | Path, files: list[Path], li
             if rel.is_absolute() or ".." in rel.parts:
                 rel = Path(safe_filename(src.name))
             dst = (root / safe_book_title / rel).resolve()
-            if root not in dst.parents and dst != root:
+            if not dst.is_relative_to(root):
                 raise ValueError("Destination path escapes library root")
             planned.append(PlannedImport(source_path=src, destination_path=dst, book_title=safe_book_title))
     return planned

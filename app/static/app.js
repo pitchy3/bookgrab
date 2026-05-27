@@ -134,7 +134,7 @@ function renderResults(results){
     button.className = 'add-btn';
     button.dataset.id = String(r.id);
     button.dataset.media = mediaType;
-    button.textContent = 'Add to queue';
+    button.textContent = 'Grab';
     button.onclick = doAdd;
     actionTd.appendChild(button);
 
@@ -178,7 +178,7 @@ async function doAdd(evt){
     setTimeout(() => {
       button.disabled = false;
       button.classList.remove('is-adding', 'is-success', 'is-failed');
-      button.textContent = 'Add to queue';
+      button.textContent = 'Grab';
     }, resetDelayMs);
   }
 }

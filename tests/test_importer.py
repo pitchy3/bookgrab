@@ -2,22 +2,13 @@ from pathlib import Path
 import asyncio
 
 from app import importer
-from app.importer import build_destination_path, find_importable_files, hardlink_file, is_supported_media_file
+from app.importer import find_importable_files, hardlink_file, is_supported_media_file, plan_imports
 
 
 def test_media_extension_filtering():
     assert is_supported_media_file("a.m4b", "audiobook")
     assert not is_supported_media_file("a.txt", "audiobook")
 
-
-def test_safe_destination_path_generation(tmp_path):
-    src = tmp_path / "src" / "Disc 01" / "track01.mp3"
-    src.parent.mkdir(parents=True)
-    src.write_bytes(b"x")
-    d = {"title": "My:Book", "content_path": str(tmp_path / "src"), "qbit_name": "fallback"}
-    dst = build_destination_path(d, src, str(tmp_path / "lib"))
-    assert str(dst).startswith(str((tmp_path / "lib").resolve()))
-    assert "My_Book" in str(dst)
 
 
 def test_hardlink_success(tmp_path):
@@ -186,3 +177,130 @@ def test_run_import_once_logs_diagnostic_when_amount_left_zero_but_progress_impe
     assert summary["processed"] == 1
     assert summary["imported"] == 1
     assert any("amount_left=0 but progress=0.9999" in (u.get("last_error") or "") for u in updates)
+
+
+def _plan_paths(download, content_path, files, library_root):
+    plans = plan_imports(download, content_path, files, str(library_root))
+    return sorted(str(p.destination_path) for p in plans)
+
+
+def test_plan_single_file_audiobook(tmp_path):
+    src = tmp_path / "downloads" / "Project Hail Mary.m4b"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x")
+    d = {"title": "ignored", "qbit_name": "ignored", "media_type": "audiobook"}
+    out = _plan_paths(d, src, [src], tmp_path / "library" / "audiobooks")
+    assert out == [str((tmp_path / "library" / "audiobooks" / "Project Hail Mary" / "Project Hail Mary.m4b").resolve())]
+
+
+def test_plan_verified_throne_of_glass_top_level_m4b_books(tmp_path):
+    root = tmp_path / "downloads" / "Throne of Glass collection"
+    root.mkdir(parents=True)
+    titles = [
+        "Crown of Midnight (Throne of Glass, Book 2)",
+        "Empire of Storms (Throne of Glass, Book 5)",
+        "Heir of Fire (Throne of Glass, Book 3)",
+        "Kingdom of Ash (Throne of Glass, Book 7)",
+        "Queen of Shadows (Throne of Glass, Book 4)",
+        "Throne of Glass (Throne of Glass, Book 1)",
+        "Tower of Dawn (Throne of Glass, Book 6)",
+    ]
+    for t in titles:
+        (root / f"{t}.m4b").write_bytes(b"x")
+        (root / f"{t}.jpg").write_bytes(b"x")
+    files = find_importable_files(str(root), "audiobook")
+    out = _plan_paths({"title": "Throne of Glass collection", "qbit_name": "Throne of Glass collection", "media_type": "audiobook"}, root, files, tmp_path / "library" / "audiobooks")
+    assert len(out) == 7
+    assert all(p.endswith('.m4b') for p in out)
+
+
+def test_plan_verified_wheel_of_time_folder_shape(tmp_path):
+    root = tmp_path / "downloads" / "Robert Jordan - The Wheel of Time Series"
+    files = [
+        root / "(0) New Spring (Unabridged)" / "[01] Intro.mp3",
+        root / "(0) New Spring (Unabridged)" / "[02] Chapter 1 - The Hook.mp3",
+        root / "(0) New Spring (Unabridged)" / "[03] Chapter 2 - A Wish Fulfilled.mp3",
+        root / "(1) The Eye of the World (Unabridged)" / "[01] Intro.mp3",
+        root / "(1) The Eye of the World (Unabridged)" / "[02] Chapter 1.mp3",
+    ]
+    for f in files:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"x")
+    (root / "(0) New Spring (Unabridged)" / "Folder.jpg").write_bytes(b"x")
+    (root / "(1) The Eye of the World (Unabridged)" / "Folder.jpg").write_bytes(b"x")
+    discovered = find_importable_files(str(root), "audiobook")
+    out = _plan_paths({"title": "Wheel of Time", "qbit_name": "Wheel of Time", "media_type": "audiobook"}, root, discovered, tmp_path / "library" / "audiobooks")
+    assert str((tmp_path / "library" / "audiobooks" / "_0_ New Spring _Unabridged_" / "_01_ Intro.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "_1_ The Eye of the World _Unabridged_" / "_02_ Chapter 1.mp3").resolve()) in out
+
+
+def test_plan_folder_with_multiple_m4b_parts_is_one_book(tmp_path):
+    root = tmp_path / "downloads" / "Series"
+    a = root / "Book 01" / "Part 1.m4b"
+    b = root / "Book 01" / "Part 2.m4b"
+    for f in [a, b]:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"x")
+    out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a, b], tmp_path / "library" / "audiobooks")
+    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "Part 1.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "Part 2.m4b").resolve()) in out
+
+
+def test_plan_top_level_mp3_files_group_as_one_book(tmp_path):
+    root = tmp_path / "downloads" / "Some Book"
+    files = []
+    for name in ["[01] Intro.mp3", "[02] Chapter 1.mp3", "[03] Chapter 2.mp3"]:
+        f = root / name
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"x")
+        files.append(f)
+    out = _plan_paths({"title": "Some Book", "qbit_name": "Some Book", "media_type": "audiobook"}, root, files, tmp_path / "library" / "audiobooks")
+    assert str((tmp_path / "library" / "audiobooks" / "Some Book" / "_01_ Intro.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Some Book" / "_03_ Chapter 2.mp3").resolve()) in out
+
+
+def test_plan_multiple_top_level_m4b_files_are_separate_books(tmp_path):
+    root = tmp_path / "downloads" / "Series"
+    a = root / "Book 01.m4b"
+    b = root / "Book 02.m4b"
+    root.mkdir(parents=True)
+    a.write_bytes(b"x"); b.write_bytes(b"x")
+    out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a, b], tmp_path / "library" / "audiobooks")
+    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "Book 01.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Book 02" / "Book 02.m4b").resolve()) in out
+
+
+def test_plan_multiple_ebook_files_each_own_folder(tmp_path):
+    root = tmp_path / "downloads" / "Series"
+    a = root / "Book 01.epub"
+    b = root / "Book 02.pdf"
+    c = root / "Book 03.azw3"
+    root.mkdir(parents=True)
+    a.write_bytes(b"x"); b.write_bytes(b"x"); c.write_bytes(b"x")
+    out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "ebook"}, root, [a, b, c], tmp_path / "library" / "ebooks")
+    assert str((tmp_path / "library" / "ebooks" / "Book 01" / "Book 01.epub").resolve()) in out
+    assert str((tmp_path / "library" / "ebooks" / "Book 02" / "Book 02.pdf").resolve()) in out
+    assert str((tmp_path / "library" / "ebooks" / "Book 03" / "Book 03.azw3").resolve()) in out
+
+
+def test_plan_mixed_top_level_folder_and_file(tmp_path):
+    root = tmp_path / "downloads" / "Series"
+    a = root / "Book 01" / "[01] Intro.mp3"
+    b = root / "Book 01" / "[02] Chapter 1.mp3"
+    c = root / "Book 02.m4b"
+    for f in [a, b, c]:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"x")
+    out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a, b, c], tmp_path / "library" / "audiobooks")
+    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "_01_ Intro.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Book 02" / "Book 02.m4b").resolve()) in out
+
+
+def test_plan_path_safety_cannot_escape_root(tmp_path):
+    root = tmp_path / "downloads" / "Series"
+    a = root / "Book 01" / "track.mp3"
+    a.parent.mkdir(parents=True, exist_ok=True)
+    a.write_bytes(b"x")
+    library_root = (tmp_path / "library" / "audiobooks").resolve()
+    plans = plan_imports({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a], str(library_root))
+    assert all(p.destination_path.resolve().is_relative_to(library_root) for p in plans)

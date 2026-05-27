@@ -20,6 +20,46 @@ def test_hardlink_success(tmp_path):
     assert dst.exists() and src.stat().st_ino == dst.stat().st_ino
 
 
+
+
+def test_hardlink_rejects_symlink_source(tmp_path):
+    real = tmp_path / "real.m4b"
+    real.write_bytes(b"abc")
+    src = tmp_path / "link.m4b"
+    src.symlink_to(real)
+    dst = tmp_path / "dest" / "link.m4b"
+    try:
+        hardlink_file(src, dst, "skip", False)
+        assert False, "expected ValueError"
+    except ValueError as exc:
+        assert "symlink" in str(exc).lower()
+
+
+def test_content_path_allowed_roots():
+    roots = importer.parse_allowed_download_roots("/downloads,/mnt/downloads")
+    allowed, reason = importer.is_content_path_allowed("/downloads/books/Book.m4b", roots)
+    assert allowed and reason is None
+
+
+def test_content_path_disallowed_root():
+    roots = importer.parse_allowed_download_roots("/downloads")
+    allowed, reason = importer.is_content_path_allowed("/tmp/evil/Book.m4b", roots)
+    assert not allowed
+    assert "outside" in (reason or "")
+
+
+def test_import_download_rejects_disallowed_content_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(importer.settings, "import_audiobook_library_path", str(tmp_path / "library"))
+    monkeypatch.setattr(importer.settings, "import_allowed_download_roots", str(tmp_path / "downloads"))
+
+    updates = {}
+    monkeypatch.setattr(importer, "update_download_import_state", lambda _id, state, err=None, completed=False: updates.update({"state": state, "err": err, "completed": completed}))
+
+    download = {"id": 1, "media_type": "audiobook", "content_path": str(tmp_path / "outside" / "book.m4b")}
+    status = asyncio.run(importer.import_download(download, {"content_path": str(tmp_path / "outside" / "book.m4b")}))
+    assert status == "failed"
+    assert updates["state"] == "failed"
+    assert "outside" in (updates["err"] or "")
 def test_conflict_skip(tmp_path):
     src = tmp_path / "a.m4b"; src.write_bytes(b"abc")
     dst = tmp_path / "b" / "a.m4b"; dst.parent.mkdir(parents=True); dst.write_bytes(b"old")

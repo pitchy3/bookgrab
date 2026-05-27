@@ -49,6 +49,7 @@ class Settings:
     import_min_completion_ratio_legacy_present: bool = "IMPORT_MIN_COMPLETION_RATIO" in os.environ
     import_require_seeding_or_complete: bool = os.getenv("IMPORT_REQUIRE_SEEDING_OR_COMPLETE", "true").lower() == "true"
     import_dry_run: bool = os.getenv("IMPORT_DRY_RUN", "false").lower() == "true"
+    import_allowed_download_roots: str = os.getenv("IMPORT_ALLOWED_DOWNLOAD_ROOTS", "/downloads")
 
 
 settings = Settings()

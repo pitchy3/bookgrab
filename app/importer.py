@@ -118,6 +118,28 @@ def safe_dirname(name: str) -> str:
     return safe_filename(name).replace("..", "_")
 
 
+
+
+def parse_allowed_download_roots(config_value: str) -> list[Path]:
+    roots: list[Path] = []
+    for raw in (config_value or "").split(","):
+        value = raw.strip()
+        if not value:
+            continue
+        roots.append(Path(value).resolve())
+    return roots
+
+
+def is_content_path_allowed(content_path: str | Path, allowed_roots: list[Path]) -> tuple[bool, str | None]:
+    if not allowed_roots:
+        return False, "IMPORT_ALLOWED_DOWNLOAD_ROOTS is empty"
+    resolved = Path(content_path).resolve()
+    for root in allowed_roots:
+        if resolved.is_relative_to(root):
+            return True, None
+    roots_text = ", ".join(str(r) for r in allowed_roots)
+    return False, f"content_path is outside IMPORT_ALLOWED_DOWNLOAD_ROOTS: {resolved} not in [{roots_text}]"
+
 def find_importable_files(content_path: str, media_type: str) -> list[Path]:
     p = Path(content_path)
     if not p.exists():
@@ -189,7 +211,7 @@ def plan_imports(download: dict, content_path: str | Path, files: list[Path], li
     for group in groups:
         safe_book_title = safe_dirname(group.book_title or resolve_fallback_title(download, content_root, group.files))
         for src in group.files:
-            src = src.resolve()
+            src = src.absolute()
             try:
                 rel_parts = [safe_dirname(p) for p in src.relative_to(group.group_root).parts]
             except Exception:
@@ -208,8 +230,13 @@ def plan_imports(download: dict, content_path: str | Path, files: list[Path], li
 
 def hardlink_file(src: str | Path, dst: str | Path, conflict_policy: str, dry_run: bool) -> str:
     srcp, dstp = Path(src), Path(dst)
-    if not srcp.exists() or not srcp.is_file():
-        raise FileNotFoundError(f"Source file missing or not regular: {srcp}")
+    if not srcp.exists():
+        raise FileNotFoundError(f"Source file missing: {srcp}")
+    srcp.lstat()
+    if srcp.is_symlink():
+        raise ValueError(f"Refusing to hardlink symlink source: {srcp}")
+    if not srcp.is_file():
+        raise FileNotFoundError(f"Source file is not regular: {srcp}")
     dstp.parent.mkdir(parents=True, exist_ok=True)
     if dstp.exists():
         if conflict_policy == "skip":
@@ -237,6 +264,11 @@ async def import_download(download: dict, qbit_torrent: dict | None) -> str:
         if not content_path:
             update_download_import_state(download["id"], "waiting", "Missing content path from qBittorrent and download record")
             return "waiting"
+        allowed_roots = parse_allowed_download_roots(settings.import_allowed_download_roots)
+        allowed, reason = is_content_path_allowed(content_path, allowed_roots)
+        if not allowed:
+            update_download_import_state(download["id"], "failed", reason or "content_path is not allowed", completed=True)
+            return "failed"
         files = find_importable_files(content_path, media_type)
         if not files:
             update_download_import_state(download["id"], "failed", "No supported files found", completed=True)

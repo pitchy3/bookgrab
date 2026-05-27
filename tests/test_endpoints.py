@@ -94,15 +94,14 @@ def test_search_renderer_escapes_xss_in_title(monkeypatch):
     assert "titleDiv.innerHTML" not in app_js
 
 
-def test_api_search_preserves_filetype_field(monkeypatch):
+def test_api_search_preserves_filetypes_field(monkeypatch):
     monkeypatch.setattr(main.settings, "app_auth_enabled", False)
 
     async def _fake_search(**kwargs):
         return [{
             "id": 9,
             "title": "Format Test",
-            "filetypes": "",
-            "filetype": "epub",
+            "filetypes": "epub",
             "_torrent_id": "9",
             "seeders": 1,
             "leechers": 0,
@@ -115,5 +114,6 @@ def test_api_search_preserves_filetype_field(monkeypatch):
 
     assert response.status_code == 200
     row = response.json()["results"][0]
-    assert row["filetype"] == "epub"
+    assert row["filetypes"] == "epub"
+    assert "filetype" not in row
     assert "_torrent_id" not in row

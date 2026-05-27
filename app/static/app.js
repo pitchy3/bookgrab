@@ -80,8 +80,7 @@ function renderResults(results){
     formatLabel.className = 'field-label';
     formatLabel.textContent = 'Format:';
     formatRow.appendChild(formatLabel);
-    const formatParts = [r.filetypes, r.filetype].filter(Boolean);
-    const formatText = formatParts.length ? formatParts.join(' • ') : '-';
+    const formatText = r.filetypes ? r.filetypes : '-';
     const sizeSuffix = r.size ? ` • ${r.size}` : '';
     formatRow.appendChild(document.createTextNode(` ${formatText}${sizeSuffix}`));
     detailsTd.appendChild(formatRow);

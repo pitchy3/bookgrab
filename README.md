@@ -169,6 +169,8 @@ services:
       - WEBUI_PORT=8080
     volumes:
       - /Volume2/Media:/downloads
+    ports:
+      - 8080:8080
     restart: unless-stopped
   bookgrab:
     image: ghcr.io/pitchy3/bookgrab:latest

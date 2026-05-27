@@ -33,20 +33,90 @@ async function doSearch() {
   renderResults(data.results || []);
 }
 
+function appendLabeledValue(container, label, value) {
+  const row = document.createElement('div');
+  const labelEl = document.createElement('span');
+  labelEl.className = 'field-label';
+  labelEl.textContent = `${label}:`;
+  row.appendChild(labelEl);
+  row.appendChild(document.createTextNode(` ${value || '-'}`));
+  container.appendChild(row);
+}
+
+function createBadge(text, className) {
+  const badge = document.createElement('span');
+  badge.className = `badge ${className}`;
+  badge.textContent = text;
+  return badge;
+}
+
 function renderResults(results){
   tbody.innerHTML = '';
+  const mediaType = document.getElementById('mediaType').value;
+
   results.filter(r => (r.seeders || 0) > 0).forEach(r => {
     const flags = [];
     if (!r.free) flags.push('not freeleech');
     if (r.my_snatched) flags.push('already snatched');
     if ((r.size || '').toLowerCase().includes('gib') && parseFloat(r.size) > 2) flags.push('very large');
+
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><div class='book-title'>${r.title}</div><div class='book-sub'>${r.catname||''}</div></td>
-      <td><div><span class='field-label'>Author:</span> ${r.author||'-'}</div><div><span class='field-label'>Narrator:</span> ${r.narrator||'-'}</div><div><span class='field-label'>Series:</span> ${r.series||'-'}</div><div><span class='field-label'>Format:</span> ${r.filetypes||''} ${r.size?`• ${r.size}`:''}</div></td>
-      <td><span class='peer-pill'>${r.seeders} seeders</span><br/><span class='peer-muted'>${r.leechers} leechers</span></td>
-      <td>${flags.map(f=>`<span class='badge warn'>${f}</span>`).join('')} ${r.free?"<span class='badge ok'>freeleech</span>":''} ${r.vip?"<span class='badge vip'>vip</span>":''}</td>
-      <td><button class='add-btn' data-id='${r.id}' data-media='${document.getElementById('mediaType').value}'>Add to queue</button></td>`;
-    tr.querySelector('button').onclick = doAdd;
+
+    const titleTd = document.createElement('td');
+    const titleDiv = document.createElement('div');
+    titleDiv.className = 'book-title';
+    titleDiv.textContent = r.title || '';
+    const subDiv = document.createElement('div');
+    subDiv.className = 'book-sub';
+    subDiv.textContent = r.catname || '';
+    titleTd.append(titleDiv, subDiv);
+
+    const detailsTd = document.createElement('td');
+    appendLabeledValue(detailsTd, 'Author', r.author);
+    appendLabeledValue(detailsTd, 'Narrator', r.narrator);
+    appendLabeledValue(detailsTd, 'Series', r.series);
+    const formatRow = document.createElement('div');
+    const formatLabel = document.createElement('span');
+    formatLabel.className = 'field-label';
+    formatLabel.textContent = 'Format:';
+    formatRow.appendChild(formatLabel);
+    const sizeSuffix = r.size ? ` • ${r.size}` : '';
+    formatRow.appendChild(document.createTextNode(` ${r.filetypes || ''}${sizeSuffix}`));
+    detailsTd.appendChild(formatRow);
+
+    const peersTd = document.createElement('td');
+    const seeders = document.createElement('span');
+    seeders.className = 'peer-pill';
+    seeders.textContent = `${r.seeders} seeders`;
+    const br = document.createElement('br');
+    const leechers = document.createElement('span');
+    leechers.className = 'peer-muted';
+    leechers.textContent = `${r.leechers} leechers`;
+    peersTd.append(seeders, br, leechers);
+
+    const flagsTd = document.createElement('td');
+    flags.forEach(flag => {
+      flagsTd.appendChild(createBadge(flag, 'warn'));
+      flagsTd.appendChild(document.createTextNode(' '));
+    });
+    if (r.free) {
+      flagsTd.appendChild(createBadge('freeleech', 'ok'));
+      flagsTd.appendChild(document.createTextNode(' '));
+    }
+    if (r.vip) {
+      flagsTd.appendChild(createBadge('vip', 'vip'));
+    }
+
+    const actionTd = document.createElement('td');
+    const button = document.createElement('button');
+    button.className = 'add-btn';
+    button.dataset.id = String(r.id);
+    button.dataset.media = mediaType;
+    button.textContent = 'Add to queue';
+    button.onclick = doAdd;
+    actionTd.appendChild(button);
+
+    tr.append(titleTd, detailsTd, peersTd, flagsTd, actionTd);
     tbody.appendChild(tr);
   });
 }

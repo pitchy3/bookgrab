@@ -72,7 +72,7 @@ See `.env.example` for full list.
 Important:
 - Fill source authentication variables in `.env` so backend source requests are authenticated.
   - MAM_COOKIE=mam_id=very-long-string
-  - In MAM, create a new session consistent with your settings for hosting the app. Copy the very-long-string into the MAM_COOKIE value. Never share this value.
+  - In MAM, create a new session consistent with your settings for hosting the app. Copy only the token value and set `MAM_COOKIE=mam_id=<token>` (or put the bare token in `MAM_UID`). Never share this value.
 - Fill `QBIT_*` values to match your qBittorrent instance.
 - Set `PUID`/`PGID` to match the host user/group that owns your bind-mounted `config` directory (defaults are `1000:1000`).
 - `PUID`/`PGID` are applied at container startup, so changing them in `.env` works even without rebuilding an existing image.

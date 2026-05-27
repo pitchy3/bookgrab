@@ -1,5 +1,5 @@
 body{font-family:Inter,Segoe UI,Arial,sans-serif;background:linear-gradient(170deg,#101524 0%,#141830 45%,#201329 100%);color:#ecf1ff;margin:0}
-.container{max-width:1150px;margin:2rem auto;padding:1rem}
+.container{max-width:1150px;margin:2rem auto;padding:1rem 1rem 1rem .5rem}
 h1{letter-spacing:.3px}
 .card{background:rgba(14,20,38,.82);padding:1rem;border-radius:12px;margin-bottom:1rem;border:1px solid rgba(148,163,184,.22);box-shadow:0 8px 24px rgba(15,23,42,.35)}
 input,select,button{margin:.25rem;padding:.6rem .7rem;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0}
@@ -17,7 +17,10 @@ tr td:last-child{border-right:1px solid rgba(148,163,184,.2);border-radius:0 10p
 .peer-muted{color:#cbd5e1;font-size:.85rem}
 .badge{display:inline-block;padding:.16rem .5rem;border-radius:999px;font-size:.76rem;margin:.1rem .2rem .1rem 0}
 .warn{background:#7c2d12}.ok{background:#166534}.vip{background:#6d28d9}
-.add-btn{white-space:nowrap}
+
+
+#results th:last-child,#results td:last-child{width:1%;white-space:nowrap}
+.add-btn{white-space:nowrap;padding:.45rem .6rem;font-size:.9rem}
 .add-btn.is-adding{filter:brightness(1.15)}
 .add-btn.is-success{background:linear-gradient(135deg,#16a34a,#22c55e)}
 .add-btn.is-failed{background:linear-gradient(135deg,#dc2626,#ef4444)}

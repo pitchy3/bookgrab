@@ -95,6 +95,7 @@ def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
         "narrator": _parse_people(item.get("narrator_info")),
         "series": _parse_people(item.get("series_info")),
         "filetypes": str(item.get("filetypes", "")),
+        "filetype": str(item.get("filetype", "")),
         "size": str(item.get("size", "")),
         "seeders": int(item.get("seeders", 0) or 0),
         "leechers": int(item.get("leechers", 0) or 0),

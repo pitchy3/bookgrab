@@ -9,6 +9,7 @@ def test_normalize_result_parses_json_people_fields():
         "narrator_info": '{"112":"Narr A"}',
         "series_info": '{"1":"Series X"}',
         "filetypes": "mp3",
+        "filetype": "m4b",
         "size": "1.2 GiB",
         "seeders": "5",
         "leechers": 0,
@@ -25,6 +26,7 @@ def test_normalize_result_parses_json_people_fields():
     assert row["series"] == "Series X"
     assert row["_torrent_id"] == "42"
     assert row["filetypes"] == "mp3"
+    assert row["filetype"] == "m4b"
 
 
 def test_build_search_payload_matches_documented_shape():

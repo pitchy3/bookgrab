@@ -2,6 +2,8 @@
 
 `BookGrab` is a small self-hosted web app for **manual** searching across configured sources and sending selected audiobook/e-book torrents to qBittorrent.
 
+> _Built with AI assistance._
+
 ## What it does
 
 - Serves a single FastAPI app (UI + backend API).
@@ -153,20 +155,53 @@ Set `IMPORT_ENABLED=true` to enable a background polling importer that watches B
 - Import is idempotent and does not move/delete/pause/remove torrents.
 - Source files remain in the qBittorrent download location for continued seeding.
 
-### Docker Compose example
+### Docker Compose example (BookGrab + qBittorrent)
 
 ```yaml
 services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      - WEBUI_PORT=8080
+    volumes:
+      - /Volume2/Media:/downloads
+    restart: unless-stopped
   bookgrab:
+    image: ghcr.io/pitchy3/bookgrab:latest
+    container_name: bookgrab
+    env_file:
+      - .env
+    depends_on:
+      - qbittorrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/Los_Angeles
+      # qBittorrent connection
+      - QBIT_BASE_URL=http://192.168.0.99:8080
+      - QBIT_USERNAME=username
+      - QBIT_PASSWORD=password
+      # Optional categories
+      - QBIT_CATEGORY_AUDIOBOOKS=audiobooks
+      - QBIT_CATEGORY_EBOOKS=ebooks
+      # MUST match qBittorrent's internal save path
+      - QBIT_SAVE_PATH_AUDIOBOOKS=/downloads/torrents
+      - QBIT_SAVE_PATH_EBOOKS=/downloads/torrents
+      # Import settings
+      - IMPORT_ENABLED=true
+      - IMPORT_MODE=hardlink
+      - IMPORT_AUDIOBOOK_LIBRARY_PATH=/downloads/Audiobooks/BookGrab
+      - IMPORT_EBOOK_LIBRARY_PATH=/downloads/ebooks/BookGrab
     volumes:
       - ./config:/config
-      - /mnt/media/downloads:/downloads
-      - /mnt/media/audiobooks:/library/audiobooks
-      - /mnt/media/ebooks:/library/ebooks
-    environment:
-      IMPORT_ENABLED: "true"
-      IMPORT_AUDIOBOOK_LIBRARY_PATH: /library/audiobooks
-      IMPORT_EBOOK_LIBRARY_PATH: /library/ebooks
+      - /Volume2/Media:/downloads
+    ports:
+      - 8787:8787
+    restart: unless-stopped
 ```
 
 Important limitations:

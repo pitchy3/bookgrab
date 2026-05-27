@@ -135,7 +135,10 @@ def _torrent_info_hash(torrent_bytes: bytes) -> str:
         key_end = key_start + key_len
         key = torrent_bytes[key_start:key_end]
         value_start = key_end
-        value_end = _bencode_item_end(torrent_bytes, value_start)
+        try:
+            value_end = _bencode_item_end(torrent_bytes, value_start)
+        except ValueError as exc:
+            raise QbitError("Invalid torrent: malformed bencode structure") from exc
         if key == b'info':
             if torrent_bytes[value_start:value_start + 1] != b'd':
                 raise QbitError("Invalid torrent: info is not a dictionary")

@@ -1,6 +1,8 @@
 import asyncio
 
-from app.qbittorrent import QbitClient, _torrent_info_hash
+import pytest
+
+from app.qbittorrent import QbitClient, QbitError, _torrent_info_hash
 
 
 class _Resp:
@@ -59,3 +61,9 @@ def test_add_torrent_looks_up_by_info_hash(monkeypatch):
 def test_torrent_info_hash_extracts_info_dict_hash():
     torrent_bytes = b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
     assert _torrent_info_hash(torrent_bytes) == "05c591eecfd83ffc3f863bb011bd324ea218c6e8"
+
+
+def test_torrent_info_hash_wraps_bencode_parse_failures():
+    torrent_bytes = b"d4:infod4:name4:Book6:lengthi12345e"
+    with pytest.raises(QbitError, match="malformed bencode structure"):
+        _torrent_info_hash(torrent_bytes)

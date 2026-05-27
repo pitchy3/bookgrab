@@ -1,6 +1,6 @@
 import asyncio
 
-from app.qbittorrent import QbitClient
+from app.qbittorrent import QbitClient, _torrent_info_hash
 
 
 class _Resp:
@@ -35,25 +35,27 @@ class _Client:
         return _Resp(payload=[])
 
 
-def test_add_torrent_multiple_candidates_does_not_guess(monkeypatch):
+def test_add_torrent_looks_up_by_info_hash(monkeypatch):
     import app.qbittorrent as qbm
 
     monkeypatch.setattr(qbm.httpx, 'AsyncClient', _Client)
 
-    calls = {"n": 0}
+    torrent_bytes = b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
+    expected_hash = _torrent_info_hash(torrent_bytes)
+    looked_up = {"hash": None}
 
-    async def _fake_get_torrents(self, client=None):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            return [{"hash": "old", "name": "old", "category": "audiobooks", "save_path": "/x", "content_path": "/x/old"}]
-        return [
-            {"hash": "old", "name": "old", "category": "audiobooks", "save_path": "/x", "content_path": "/x/old"},
-            {"hash": "new1", "name": "A.mp3", "category": "audiobooks", "save_path": "/x", "content_path": "/x/A.mp3"},
-            {"hash": "new2", "name": "B.mp3", "category": "audiobooks", "save_path": "/x", "content_path": "/x/B.mp3"},
-        ]
+    async def _fake_get_torrent(self, hash):
+        looked_up["hash"] = hash
+        return {"hash": hash, "name": "Book", "category": "audiobooks", "save_path": "/x", "content_path": "/x/Book"}
 
-    monkeypatch.setattr(QbitClient, 'get_torrents', _fake_get_torrents)
+    monkeypatch.setattr(QbitClient, 'get_torrent', _fake_get_torrent)
 
     client = QbitClient()
-    result = asyncio.run(client.add_torrent(b'd8:announce', 'audiobook', 'Target Name'))
-    assert result['hash'] is None
+    result = asyncio.run(client.add_torrent(torrent_bytes, 'audiobook', 'Target Name'))
+    assert looked_up['hash'] == expected_hash
+    assert result['hash'] == expected_hash
+
+
+def test_torrent_info_hash_extracts_info_dict_hash():
+    torrent_bytes = b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
+    assert _torrent_info_hash(torrent_bytes) == "05c591eecfd83ffc3f863bb011bd324ea218c6e8"

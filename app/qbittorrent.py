@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import httpx
 
 from app.config import settings
@@ -52,6 +53,7 @@ class QbitClient:
             return self._normalize(js[0])
 
     async def add_torrent(self, torrent_bytes: bytes, media_type: str, name: str) -> dict:
+        expected_hash = _torrent_info_hash(torrent_bytes)
         category = settings.qbit_category_audiobooks if media_type == "audiobook" else settings.qbit_category_ebooks
         save_path = settings.qbit_save_path_audiobooks if media_type == "audiobook" else settings.qbit_save_path_ebooks
         form_data = {"category": category}
@@ -72,34 +74,71 @@ class QbitClient:
         after = []
         for _ in range(5):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    await self._login(client)
-                    after = await self.get_torrents(client)
+                found = await self.get_torrent(expected_hash)
+                if found:
+                    after = [found]
+                    break
             except httpx.HTTPError:
                 after = []
-            old_hashes = {t["hash"] for t in before if t.get("hash")}
-            if any(t.get("hash") not in old_hashes for t in after):
-                break
             await asyncio.sleep(0.4)
-        old_hashes = {t["hash"] for t in before if t.get("hash")}
-        candidates = [t for t in after if t.get("hash") not in old_hashes]
-        selected = None
-        if len(candidates) == 1:
-            selected = candidates[0]
-        elif len(candidates) > 1:
-            name_l = (name or "").lower()
-            strong = [c for c in candidates if c.get("category") == category and name_l and name_l in (c.get("name") or "").lower()]
-            if len(strong) == 1:
-                selected = strong[0]
-            elif not strong:
-                weak = [c for c in candidates if c.get("category") == category or (name_l and name_l in (c.get("name") or "").lower())]
-                if len(weak) == 1:
-                    selected = weak[0]
+        selected = after[0] if after else None
         return {
             "category": category,
             "hash": selected.get("hash") if selected else None,
             "name": selected.get("name") if selected else name,
             "save_path": selected.get("save_path") if selected else save_path,
             "content_path": selected.get("content_path") if selected else None,
-            "last_error": None if selected else "Could not determine torrent hash after add; importer will wait until matched manually.",
+            "last_error": None if selected else "Could not find uploaded torrent in qBittorrent by info hash; importer will wait until matched manually.",
         }
+
+
+def _bencode_item_end(raw: bytes, idx: int) -> int:
+    if idx >= len(raw):
+        raise ValueError("invalid bencode: unexpected end")
+    token = raw[idx:idx + 1]
+    if token == b'i':
+        end = raw.find(b'e', idx + 1)
+        if end < 0:
+            raise ValueError("invalid bencode integer")
+        return end + 1
+    if token == b'l' or token == b'd':
+        j = idx + 1
+        while j < len(raw) and raw[j:j + 1] != b'e':
+            j = _bencode_item_end(raw, j)
+            if token == b'd':
+                j = _bencode_item_end(raw, j)
+        if j >= len(raw):
+            raise ValueError("invalid bencode container")
+        return j + 1
+    if token.isdigit():
+        colon = raw.find(b':', idx)
+        if colon < 0:
+            raise ValueError("invalid bencode string")
+        size = int(raw[idx:colon])
+        return colon + 1 + size
+    raise ValueError("invalid bencode token")
+
+
+def _torrent_info_hash(torrent_bytes: bytes) -> str:
+    if not torrent_bytes.startswith(b'd'):
+        raise QbitError("Invalid torrent: expected top-level dictionary")
+    i = 1
+    while i < len(torrent_bytes) and torrent_bytes[i:i + 1] != b'e':
+        colon = torrent_bytes.find(b':', i)
+        if colon < 0:
+            raise QbitError("Invalid torrent: malformed key")
+        try:
+            key_len = int(torrent_bytes[i:colon])
+        except ValueError as exc:
+            raise QbitError("Invalid torrent: malformed key length") from exc
+        key_start = colon + 1
+        key_end = key_start + key_len
+        key = torrent_bytes[key_start:key_end]
+        value_start = key_end
+        value_end = _bencode_item_end(torrent_bytes, value_start)
+        if key == b'info':
+            if torrent_bytes[value_start:value_start + 1] != b'd':
+                raise QbitError("Invalid torrent: info is not a dictionary")
+            return hashlib.sha1(torrent_bytes[value_start:value_end]).hexdigest()
+        i = value_end
+    raise QbitError("Invalid torrent: missing info dictionary")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,30 @@ mam_client = MamClient()
 qbit_client = QbitClient()
 _search_cache: dict[str, dict[int, dict[str, Any]]] = {}
 _importer_task = None
+_SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
+
+
+def _is_insecure_default(value: str, insecure_values: set[str]) -> bool:
+    return value.strip().lower() in insecure_values
+
+
+def _validate_auth_config() -> None:
+    if not settings.app_auth_enabled:
+        return
+    if _is_insecure_default(settings.app_password, {"", "change-me"}):
+        raise RuntimeError("Refusing to start with APP_AUTH_ENABLED=true and insecure APP_PASSWORD")
+    secret = settings.app_session_secret.strip()
+    if _is_insecure_default(secret, {"", "change-this-random-secret"}):
+        raise RuntimeError("Refusing to start with APP_AUTH_ENABLED=true and insecure APP_SESSION_SECRET")
+    if len(secret) < 32:
+        raise RuntimeError("Refusing to start with APP_AUTH_ENABLED=true and APP_SESSION_SECRET shorter than 32 characters")
+
+
+def _is_https_request(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
 
 
 def _validate_import_config() -> None:
@@ -68,6 +93,7 @@ async def startup() -> None:
     print(f"Config directory: {config_dir}")
     print(f"Database path: {db_path}")
     print(f"Running as UID:GID: {uid}:{gid}")
+    _validate_auth_config()
 
     global _importer_task
     try:
@@ -116,7 +142,15 @@ async def login(request: Request) -> JSONResponse:
     if data.get("username") != settings.app_username or data.get("password") != settings.app_password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     response = JSONResponse({"ok": True})
-    response.set_cookie("session", _sign_token(settings.app_username), httponly=True, samesite="lax")
+    response.set_cookie(
+        "session",
+        _sign_token(settings.app_username),
+        httponly=True,
+        samesite="lax",
+        secure=_is_https_request(request),
+        max_age=_SESSION_MAX_AGE_SECONDS,
+        expires=int(time.time()) + _SESSION_MAX_AGE_SECONDS,
+    )
     return response
 
 

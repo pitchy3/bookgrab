@@ -58,16 +58,106 @@ function abbreviateProvider(provider) {
   return provider;
 }
 
-function buildLibraryTooltip(matches) {
+function buildLibraryMatchDetails(matches) {
   return (matches || []).map(match => {
+    const provider = (match.provider || '').trim();
     const details = [match.title, match.author, match.narrator]
       .map(value => (value || '').trim())
       .filter(Boolean);
     if (details.length === 0) {
-      return match.provider;
+      return provider;
     }
-    return `${match.provider}: ${details.join(' | ')}`;
-  }).join('\n');
+    if (!provider) {
+      return details.join(' | ');
+    }
+    return `${provider}: ${details.join(' | ')}`;
+  }).filter(Boolean);
+}
+
+function buildLibraryTooltip(matches) {
+  return buildLibraryMatchDetails(matches).join('\n');
+}
+
+function getLibraryProviders(matches) {
+  return [...new Set((matches || [])
+    .map(match => abbreviateProvider((match.provider || '').trim()))
+    .filter(Boolean))];
+}
+
+function confirmLibraryGrab(result) {
+  const details = buildLibraryMatchDetails(result.library_matches || []);
+
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-labelledby', 'library-confirm-title');
+    dialog.setAttribute('aria-describedby', 'library-confirm-message');
+
+    const title = document.createElement('h2');
+    title.id = 'library-confirm-title';
+    title.textContent = 'Grab anyway?';
+
+    const message = document.createElement('p');
+    message.id = 'library-confirm-message';
+    message.textContent = 'This appears to already be in your library.';
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-actions';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'confirm-cancel';
+    cancelButton.textContent = 'Cancel';
+
+    const grabButton = document.createElement('button');
+    grabButton.type = 'button';
+    grabButton.textContent = 'Grab anyway';
+
+    actions.append(cancelButton, grabButton);
+    dialog.append(title, message);
+
+    if (details.length > 0) {
+      const list = document.createElement('ul');
+      list.className = 'confirm-match-list';
+      details.forEach(detail => {
+        const item = document.createElement('li');
+        item.textContent = detail;
+        list.appendChild(item);
+      });
+      dialog.appendChild(list);
+    }
+
+    dialog.appendChild(actions);
+    overlay.appendChild(dialog);
+
+    const close = confirmed => {
+      document.removeEventListener('keydown', onKeydown);
+      overlay.remove();
+      resolve(confirmed);
+    };
+
+    const onKeydown = event => {
+      if (event.key === 'Escape') {
+        close(false);
+      }
+    };
+
+    cancelButton.addEventListener('click', () => close(false));
+    grabButton.addEventListener('click', () => close(true));
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) {
+        close(false);
+      }
+    });
+    document.addEventListener('keydown', onKeydown);
+    document.body.appendChild(overlay);
+    cancelButton.focus();
+  });
 }
 
 function renderResults(results){
@@ -156,32 +246,22 @@ function renderResults(results){
     button.dataset.id = String(r.id);
     button.dataset.media = mediaType;
 
+    button.textContent = 'Grab';
+    button.onclick = event => doAdd(event, r);
+    actionTd.appendChild(button);
+
     if (r.in_library === true) {
-      const providers = (r.library_matches || []).map(m => abbreviateProvider(m.provider));
-      const providersText = providers.length ? providers.join(' + ') : 'Configured library';
-      const label = providers.length ? `Already in ${providersText}` : 'Already in library';
+      const providers = getLibraryProviders(r.library_matches || []);
+      const label = providers.length ? `In ${providers.join(' + ')}` : 'In library';
       const detailTooltip = buildLibraryTooltip(r.library_matches || []);
 
-      const status = document.createElement('div');
-      status.className = 'library-status';
-      status.setAttribute('role', 'status');
-      status.setAttribute('aria-label', label);
-      status.title = detailTooltip || label;
-
-      const statusMain = document.createElement('span');
-      statusMain.className = 'library-status-main';
-      statusMain.textContent = 'in library';
-
-      const statusProvider = document.createElement('span');
-      statusProvider.className = 'library-status-provider';
-      statusProvider.textContent = providersText;
-
-      status.append(statusMain, statusProvider);
-      actionTd.appendChild(status);
-    } else {
-      button.textContent = 'Grab';
-      button.onclick = doAdd;
-      actionTd.appendChild(button);
+      const warning = document.createElement('div');
+      warning.className = 'library-warning-label';
+      warning.setAttribute('role', 'status');
+      warning.setAttribute('aria-label', label);
+      warning.title = detailTooltip || label;
+      warning.textContent = label;
+      actionTd.appendChild(warning);
     }
 
     tr.append(titleTd, detailsTd, statusTd, actionTd);
@@ -189,11 +269,29 @@ function renderResults(results){
   });
 }
 
-async function doAdd(evt){
+async function doAdd(evt, result){
   const button = evt.currentTarget;
+  if (button.dataset.addPending === 'true') {
+    return;
+  }
+
   const id = Number(button.dataset.id);
   const media_type = button.dataset.media;
   const resetDelayMs = 1500;
+
+  button.dataset.addPending = 'true';
+
+  if (result?.in_library === true) {
+    button.disabled = true;
+    button.textContent = 'Confirm...';
+
+    if (!(await confirmLibraryGrab(result))) {
+      delete button.dataset.addPending;
+      button.disabled = false;
+      button.textContent = 'Grab';
+      return;
+    }
+  }
 
   button.disabled = true;
   button.classList.add('is-adding');
@@ -222,6 +320,7 @@ async function doAdd(evt){
     setStatus('Add failed', 'error');
   } finally {
     setTimeout(() => {
+      delete button.dataset.addPending;
       button.disabled = false;
       button.classList.remove('is-adding', 'is-success', 'is-failed');
       button.textContent = 'Grab';

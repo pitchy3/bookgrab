@@ -6,7 +6,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -49,6 +49,25 @@ def _split_people(value: str) -> set[str]:
     parts = re.split(r"[,;/]|\band\b|\bwith\b|\&", value or "", flags=re.IGNORECASE)
     return {p for p in (_normalize_text(x) for x in parts) if p}
 
+
+
+
+def _extract_people(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        people: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                person = item.strip()
+            elif isinstance(item, dict):
+                person = str(item.get("name", "")).strip()
+            else:
+                person = ""
+            if person:
+                people.append(person)
+        return ", ".join(people)
+    return ""
 
 def _is_strict_match(title: str, authors: str, narrators: str, book: LibraryBook) -> bool:
     title_ok = _normalize_text(title) == _normalize_text(book.title)
@@ -138,8 +157,8 @@ class AudiobookshelfProvider:
                 title = md.get("title", "")
                 if not _normalize_text(title):
                     continue
-                author = md.get("authorName") or ", ".join([a.get("name", "") for a in (md.get("authors") or []) if isinstance(a, dict)])
-                narrator = md.get("narratorName") or ", ".join([n.get("name", "") for n in (md.get("narrators") or []) if isinstance(n, dict)])
+                author = _extract_people(md.get("authorName")) or _extract_people(md.get("authors"))
+                narrator = _extract_people(md.get("narratorName")) or _extract_people(md.get("narrators"))
                 books.append(LibraryBook(title=title, authors=author or "", narrators=narrator or ""))
             self._index = books
             return books
@@ -181,7 +200,13 @@ class LibraryPresenceService:
             cached = self._provider_cache.get(provider.name)
             if cached and (now - cached[0]) < ttl:
                 return
-            data = await provider.refresh_index()
+            try:
+                data = await provider.refresh_index()
+            except Exception:
+                if cached:
+                    logger.warning("Library provider %s refresh failed; using stale index", provider.name)
+                    return
+                raise
             self._provider_cache[provider.name] = (time.time(), data)
 
 

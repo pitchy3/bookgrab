@@ -120,6 +120,29 @@ def test_api_search_preserves_filetype_fields(monkeypatch):
     assert "_torrent_id" not in row
 
 
+
+
+def test_api_search_in_library_positive_annotation(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+
+    async def _fake_search(**kwargs):
+        return [{"id": 3, "title": "Book", "author": "Jane", "narrator": "John", "_torrent_id": "3", "seeders": 1, "leechers": 0, "catname": "Audio"}]
+
+    async def _annotate(_row):
+        return (True, [{"provider": "Audiobookshelf", "title": "Book", "author": "Jane", "narrator": "John"}])
+
+    monkeypatch.setattr(main.mam_client, "search", _fake_search)
+    monkeypatch.setattr(main.library_presence_service, "annotate", _annotate)
+
+    client = TestClient(main.app)
+    response = client.post("/api/search", json={"query": "book", "media_type": "audiobook", "search_in": ["title"], "sort": "seedersDesc"})
+
+    assert response.status_code == 200
+    row = response.json()["results"][0]
+    assert row["in_library"] is True
+    assert row["library_matches"][0]["provider"] == "Audiobookshelf"
+    assert "_torrent_id" not in row
+
 def test_api_search_plex_disabled_does_not_break(monkeypatch):
     monkeypatch.setattr(main.settings, "app_auth_enabled", False)
     monkeypatch.setattr(main.settings, "plex_enabled", False)

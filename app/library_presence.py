@@ -82,7 +82,12 @@ class PlexProvider:
             root = ET.fromstring(resp.text)
             books: list[LibraryBook] = []
             for node in root.findall(".//Track") + root.findall(".//Directory") + root.findall(".//Metadata"):
-                title = node.attrib.get("title") or node.attrib.get("parentTitle") or ""
+                # Plex audiobook libraries may expose chapter files as Track entries
+                # where parentTitle represents the book/album title.
+                if node.tag == "Track":
+                    title = node.attrib.get("parentTitle") or node.attrib.get("title") or ""
+                else:
+                    title = node.attrib.get("title") or node.attrib.get("parentTitle") or ""
                 if not _normalize_text(title):
                     continue
                 author = ", ".join(filter(None, [node.attrib.get("parentTitle", ""), node.attrib.get("grandparentTitle", "")]))

@@ -107,7 +107,9 @@ class PlexProvider:
         resp.raise_for_status()
         root = ET.fromstring(resp.text)
         books: list[LibraryBook] = []
-        for node in root.findall(".//Directory"):
+        for node in root.iter():
+            if node.tag not in {"Directory", "Metadata"}:
+                continue
             if node.attrib.get("type") == "artist":
                 continue
             title = node.attrib.get("title", "")

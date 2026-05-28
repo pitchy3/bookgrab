@@ -156,6 +156,43 @@ def test_plex_albums_skip_artist_and_index_album_author(monkeypatch):
     assert books == [LibraryBook(title='Carrie', authors='Stephen King', narrators='')]
 
 
+def test_plex_albums_index_metadata_album_nodes(monkeypatch):
+    monkeypatch.setattr(library_presence.settings, 'plex_enabled', True)
+    monkeypatch.setattr(library_presence.settings, 'plex_base_url', 'http://plex.local')
+    monkeypatch.setattr(library_presence.settings, 'plex_token', 'token')
+    monkeypatch.setattr(library_presence.settings, 'plex_library_section_id', '1')
+
+    requests: list[str] = []
+
+    class _Resp:
+        def __init__(self, text):
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, url, *args, **kwargs):
+            requests.append(url)
+            if url.endswith("/albums"):
+                return _Resp('<MediaContainer><Metadata type="album" title="Carrie" parentTitle="Stephen King"><Role tag="Narrator: Sissy Spacek" /></Metadata></MediaContainer>')
+            return _Resp('<MediaContainer><Track title="Chapter 01" parentTitle="Fallback Book" grandparentTitle="Fallback Author" /></MediaContainer>')
+
+    monkeypatch.setattr(library_presence.httpx, 'AsyncClient', lambda *args, **kwargs: _Client())
+
+    provider = library_presence.PlexProvider()
+    books = asyncio.run(provider.refresh_index())
+
+    assert books == [LibraryBook(title='Carrie', authors='Stephen King', narrators='Narrator: Sissy Spacek')]
+    assert requests == ['http://plex.local/library/sections/1/albums']
+
+
 def test_plex_album_matches_when_narrator_not_required(monkeypatch):
     monkeypatch.setattr(library_presence.settings, 'library_presence_require_narrator', False)
     provider = library_presence.PlexProvider()

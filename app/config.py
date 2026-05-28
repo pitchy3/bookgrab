@@ -32,6 +32,19 @@ class Settings:
     search_cache_ttl_seconds: int = max(int(os.getenv("SEARCH_CACHE_TTL_SECONDS", "1800")), 1)
     search_cache_max_entries: int = max(int(os.getenv("SEARCH_CACHE_MAX_ENTRIES", "200")), 1)
 
+    plex_enabled: bool = os.getenv("PLEX_ENABLED", "false").lower() == "true"
+    plex_base_url: str = os.getenv("PLEX_BASE_URL", "http://plex:32400").rstrip("/")
+    plex_token: str = os.getenv("PLEX_TOKEN", "")
+    plex_library_section_id: str = os.getenv("PLEX_LIBRARY_SECTION_ID", "")
+    plex_library_name: str = os.getenv("PLEX_LIBRARY_NAME", "Audiobooks")
+    audiobookshelf_enabled: bool = os.getenv("AUDIOBOOKSHELF_ENABLED", "false").lower() == "true"
+    audiobookshelf_base_url: str = os.getenv("AUDIOBOOKSHELF_BASE_URL", "").rstrip("/")
+    audiobookshelf_token: str = os.getenv("AUDIOBOOKSHELF_TOKEN", "")
+    audiobookshelf_library_id: str = os.getenv("AUDIOBOOKSHELF_LIBRARY_ID", "")
+
+    library_presence_cache_ttl_seconds: int = max(int(os.getenv("LIBRARY_PRESENCE_CACHE_TTL_SECONDS", "600")), 1)
+    library_presence_require_narrator: bool = os.getenv("LIBRARY_PRESENCE_REQUIRE_NARRATOR", "true").lower() == "true"
+
     config_dir: str = os.getenv("CONFIG_DIR", "/config")
     database_path: str = os.getenv("DATABASE_PATH", "/config/app.db")
 

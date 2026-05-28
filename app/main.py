@@ -18,6 +18,7 @@ from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
 from app.importer import importer_loop, run_import_once
 from app.qbittorrent import QbitClient, QbitError
+from app.library_presence import library_presence_service
 
 app = FastAPI(title="BookGrab")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -208,6 +209,19 @@ async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]
         per_id[row["id"]] = row
         safe = {k: v for k, v in row.items() if k != "_torrent_id"}
         sanitized.append(safe)
+    if payload.media_type == "audiobook":
+        for safe in sanitized:
+            try:
+                in_library, library_matches = await library_presence_service.annotate(safe)
+            except Exception:  # noqa: BLE001
+                in_library, library_matches = False, []
+            safe["in_library"] = in_library
+            safe["library_matches"] = library_matches
+    else:
+        for safe in sanitized:
+            safe["in_library"] = False
+            safe["library_matches"] = []
+
     cache_key = f"{payload.media_type}:{payload.query.lower()}:{payload.sort}"
     _search_cache[cache_key] = per_id
     _search_cache_updated_at[cache_key] = time.time()

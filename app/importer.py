@@ -206,6 +206,7 @@ def infer_book_groups(download: dict, content_path: Path, files: list[Path], med
 def plan_imports(download: dict, content_path: str | Path, files: list[Path], library_root: str) -> list[PlannedImport]:
     root = Path(library_root).resolve()
     content_root = Path(content_path).resolve()
+    safe_author = safe_dirname(str(download.get("author") or "Unknown Author"))
     groups = infer_book_groups(download, content_root, files, download["media_type"])
     planned: list[PlannedImport] = []
     for group in groups:
@@ -221,7 +222,7 @@ def plan_imports(download: dict, content_path: str | Path, files: list[Path], li
             rel = Path(*rel_parts)
             if rel.is_absolute() or ".." in rel.parts:
                 rel = Path(safe_filename(src.name))
-            dst = (root / safe_book_title / rel).resolve()
+            dst = (root / safe_author / safe_book_title / rel).resolve()
             if not dst.is_relative_to(root):
                 raise ValueError("Destination path escapes library root")
             planned.append(PlannedImport(source_path=src, destination_path=dst, book_title=safe_book_title))

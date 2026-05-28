@@ -28,9 +28,14 @@ tr td:last-child{border-right:1px solid rgba(148,163,184,.2);border-radius:0 10p
 .add-btn.is-adding{filter:brightness(1.15)}
 .add-btn.is-success{background:linear-gradient(135deg,#16a34a,#22c55e)}
 .add-btn.is-failed{background:linear-gradient(135deg,#dc2626,#ef4444)}
-.library-status{display:inline-flex;flex-direction:column;align-items:center;gap:.2rem;max-width:110px;line-height:1.2}
-.library-status-main{display:inline-block;padding:.16rem .5rem;border-radius:999px;font-size:.76rem;font-weight:600;background:#166534;color:#d1fae5;white-space:nowrap}
-.library-status-provider{font-size:.72rem;color:#9fb0d8;text-align:center;overflow-wrap:anywhere;word-break:break-word}
+.library-warning-label{display:block;width:fit-content;max-width:100%;margin:.25rem auto 0;padding:.12rem .4rem;border-radius:999px;background:#7c2d12;color:#fed7aa;font-size:.7rem;font-weight:600;line-height:1.2;white-space:normal;overflow-wrap:anywhere}
+.confirm-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(2,6,23,.72)}
+.confirm-dialog{width:min(100%,420px);max-height:calc(100vh - 2rem);overflow:auto;background:#0f172a;color:#ecf1ff;border:1px solid rgba(148,163,184,.35);border-radius:14px;padding:1rem;box-shadow:0 20px 48px rgba(2,6,23,.55)}
+.confirm-dialog h2{margin:.1rem 0 .65rem;font-size:1.15rem}
+.confirm-dialog p{margin:.35rem 0;color:#dbeafe;line-height:1.4}
+.confirm-match-list{margin:.75rem 0;padding-left:1.2rem;color:#cbd5e1;font-size:.9rem;line-height:1.35;overflow-wrap:anywhere}
+.confirm-actions{display:flex;justify-content:flex-end;gap:.5rem;flex-wrap:wrap;margin-top:1rem}
+.confirm-cancel{background:#334155}
 .err{color:#fca5a5}.ok{color:#86efac}.hidden{display:none}
 
 .status-row{margin:.1rem 0 .35rem 0}.status-row:last-child{margin-bottom:0}

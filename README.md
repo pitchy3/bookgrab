@@ -14,6 +14,8 @@
 - Uploads torrents to qBittorrent Web API with category/savepath mapping.
 - Writes basic add history to `/config/app.db`.
 
+- Optional library presence checks (Plex and/or Audiobookshelf) for search results (disabled by default).
+
 ## What it does NOT do
 
 - Not a Readarr/Sonarr replacement.
@@ -75,6 +77,13 @@ Important:
   - In MAM, create a new session consistent with your settings for hosting the app. Copy only the token value and set `MAM_COOKIE=mam_id=<token>` (or put the bare token in `MAM_UID`). Never share this value.
 - Fill `QBIT_*` values to match your qBittorrent instance.
 - Set `PUID`/`PGID` to match the host user/group that owns your bind-mounted `config` directory (defaults are `1000:1000`).
+
+- Optional library-presence checks for audiobooks:
+  - Enable Plex with `PLEX_ENABLED=true` and `PLEX_*` settings
+  - Enable Audiobookshelf with `AUDIOBOOKSHELF_ENABLED=true` and `AUDIOBOOKSHELF_*` settings
+  - You can enable both at once; results are marked `In library` if any provider matches based on `LIBRARY_PRESENCE_REQUIRE_NARRATOR`
+  - `LIBRARY_PRESENCE_REQUIRE_NARRATOR=true` (default): require title + author + narrator overlap; missing narrator on either side does not match
+  - `LIBRARY_PRESENCE_REQUIRE_NARRATOR=false`: require title + author only (narrator ignored)
 - `PUID`/`PGID` are applied at container startup, so changing them in `.env` works even without rebuilding an existing image.
 
 ## Source auth notes

@@ -134,9 +134,21 @@ function renderResults(results){
     button.className = 'add-btn';
     button.dataset.id = String(r.id);
     button.dataset.media = mediaType;
-    button.textContent = 'Grab';
-    button.onclick = doAdd;
-    actionTd.appendChild(button);
+
+    if (r.in_library === true) {
+      button.textContent = 'In library';
+      button.disabled = true;
+      const providers = (r.library_matches || []).map(m => m.provider);
+      const label = providers.length ? `Already in ${providers.join(' + ' )}` : 'Already in library';
+      button.title = (r.library_matches || []).map(m => `${m.provider}: ${m.title} | ${m.author} | ${m.narrator}`).join('\n') || label;
+      const badge = createBadge(label, 'ok');
+      badge.title = button.title;
+      actionTd.append(button, document.createTextNode(' '), badge);
+    } else {
+      button.textContent = 'Grab';
+      button.onclick = doAdd;
+      actionTd.appendChild(button);
+    }
 
     tr.append(titleTd, detailsTd, statusTd, actionTd);
     tbody.appendChild(tr);

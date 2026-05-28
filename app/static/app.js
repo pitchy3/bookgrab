@@ -271,12 +271,26 @@ function renderResults(results){
 
 async function doAdd(evt, result){
   const button = evt.currentTarget;
+  if (button.dataset.addPending === 'true') {
+    return;
+  }
+
   const id = Number(button.dataset.id);
   const media_type = button.dataset.media;
   const resetDelayMs = 1500;
 
-  if (result?.in_library === true && !(await confirmLibraryGrab(result))) {
-    return;
+  button.dataset.addPending = 'true';
+
+  if (result?.in_library === true) {
+    button.disabled = true;
+    button.textContent = 'Confirm...';
+
+    if (!(await confirmLibraryGrab(result))) {
+      delete button.dataset.addPending;
+      button.disabled = false;
+      button.textContent = 'Grab';
+      return;
+    }
   }
 
   button.disabled = true;
@@ -306,6 +320,7 @@ async function doAdd(evt, result){
     setStatus('Add failed', 'error');
   } finally {
     setTimeout(() => {
+      delete button.dataset.addPending;
       button.disabled = false;
       button.classList.remove('is-adding', 'is-success', 'is-failed');
       button.textContent = 'Grab';

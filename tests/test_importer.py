@@ -224,13 +224,62 @@ def _plan_paths(download, content_path, files, library_root):
     return sorted(str(p.destination_path) for p in plans)
 
 
+def test_plan_audiobook_path_includes_author(tmp_path):
+    src = tmp_path / "downloads" / "Project Hail Mary.m4b"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x")
+    download = {"title": "Project Hail Mary", "author": "Sarah J. Maas", "media_type": "audiobook"}
+
+    out = _plan_paths(download, src, [src], tmp_path / "library" / "audiobooks")
+
+    assert out == [str((tmp_path / "library" / "audiobooks" / "Sarah J. Maas" / "Project Hail Mary" / "Project Hail Mary.m4b").resolve())]
+
+
+def test_plan_ebook_path_includes_author(tmp_path):
+    src = tmp_path / "downloads" / "Mistborn.epub"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x")
+    download = {"title": "Mistborn", "author": "Brandon Sanderson", "media_type": "ebook"}
+
+    out = _plan_paths(download, src, [src], tmp_path / "library" / "ebooks")
+
+    assert out == [str((tmp_path / "library" / "ebooks" / "Brandon Sanderson" / "Mistborn" / "Mistborn.epub").resolve())]
+
+
+def test_plan_missing_author_uses_unknown_author(tmp_path):
+    root = tmp_path / "downloads"
+    src = root / "Book Title" / "file.m4b"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x")
+    download = {"title": "Book Title", "media_type": "audiobook"}
+
+    out = _plan_paths(download, root, [src], tmp_path / "library" / "audiobooks")
+
+    assert out == [str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book Title" / "file.m4b").resolve())]
+
+
+def test_plan_author_path_is_sanitized_and_stays_in_library_root(tmp_path):
+    root = tmp_path / "downloads"
+    src = root / "Book Title" / "file.m4b"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x")
+    library_root = (tmp_path / "library" / "audiobooks").resolve()
+    download = {"title": "Book Title", "author": "../../Evil/Author", "media_type": "audiobook"}
+
+    plans = plan_imports(download, root, [src], str(library_root))
+
+    assert len(plans) == 1
+    assert plans[0].destination_path.resolve().is_relative_to(library_root)
+    assert plans[0].destination_path == (library_root / "___Evil_Author" / "Book Title" / "file.m4b").resolve()
+
+
 def test_plan_single_file_audiobook(tmp_path):
     src = tmp_path / "downloads" / "Project Hail Mary.m4b"
     src.parent.mkdir(parents=True)
     src.write_bytes(b"x")
     d = {"title": "ignored", "qbit_name": "ignored", "media_type": "audiobook"}
     out = _plan_paths(d, src, [src], tmp_path / "library" / "audiobooks")
-    assert out == [str((tmp_path / "library" / "audiobooks" / "Project Hail Mary" / "Project Hail Mary.m4b").resolve())]
+    assert out == [str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Project Hail Mary" / "Project Hail Mary.m4b").resolve())]
 
 
 def test_plan_imports_preserves_symlink_source_for_later_rejection(tmp_path):
@@ -286,8 +335,8 @@ def test_plan_verified_wheel_of_time_folder_shape(tmp_path):
     (root / "(1) The Eye of the World (Unabridged)" / "Folder.jpg").write_bytes(b"x")
     discovered = find_importable_files(str(root), "audiobook")
     out = _plan_paths({"title": "Wheel of Time", "qbit_name": "Wheel of Time", "media_type": "audiobook"}, root, discovered, tmp_path / "library" / "audiobooks")
-    assert str((tmp_path / "library" / "audiobooks" / "_0_ New Spring _Unabridged_" / "_01_ Intro.mp3").resolve()) in out
-    assert str((tmp_path / "library" / "audiobooks" / "_1_ The Eye of the World _Unabridged_" / "_02_ Chapter 1.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "_0_ New Spring _Unabridged_" / "_01_ Intro.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "_1_ The Eye of the World _Unabridged_" / "_02_ Chapter 1.mp3").resolve()) in out
 
 
 def test_plan_folder_with_multiple_m4b_parts_is_one_book(tmp_path):
@@ -298,8 +347,8 @@ def test_plan_folder_with_multiple_m4b_parts_is_one_book(tmp_path):
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_bytes(b"x")
     out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a, b], tmp_path / "library" / "audiobooks")
-    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "Part 1.m4b").resolve()) in out
-    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "Part 2.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book 01" / "Part 1.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book 01" / "Part 2.m4b").resolve()) in out
 
 
 def test_plan_top_level_mp3_files_group_as_one_book(tmp_path):
@@ -311,8 +360,8 @@ def test_plan_top_level_mp3_files_group_as_one_book(tmp_path):
         f.write_bytes(b"x")
         files.append(f)
     out = _plan_paths({"title": "Some Book", "qbit_name": "Some Book", "media_type": "audiobook"}, root, files, tmp_path / "library" / "audiobooks")
-    assert str((tmp_path / "library" / "audiobooks" / "Some Book" / "_01_ Intro.mp3").resolve()) in out
-    assert str((tmp_path / "library" / "audiobooks" / "Some Book" / "_03_ Chapter 2.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Some Book" / "_01_ Intro.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Some Book" / "_03_ Chapter 2.mp3").resolve()) in out
 
 
 def test_plan_multiple_top_level_m4b_files_are_separate_books(tmp_path):
@@ -322,8 +371,8 @@ def test_plan_multiple_top_level_m4b_files_are_separate_books(tmp_path):
     root.mkdir(parents=True)
     a.write_bytes(b"x"); b.write_bytes(b"x")
     out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a, b], tmp_path / "library" / "audiobooks")
-    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "Book 01.m4b").resolve()) in out
-    assert str((tmp_path / "library" / "audiobooks" / "Book 02" / "Book 02.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book 01" / "Book 01.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book 02" / "Book 02.m4b").resolve()) in out
 
 
 def test_plan_multiple_ebook_files_each_own_folder(tmp_path):
@@ -334,9 +383,9 @@ def test_plan_multiple_ebook_files_each_own_folder(tmp_path):
     root.mkdir(parents=True)
     a.write_bytes(b"x"); b.write_bytes(b"x"); c.write_bytes(b"x")
     out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "ebook"}, root, [a, b, c], tmp_path / "library" / "ebooks")
-    assert str((tmp_path / "library" / "ebooks" / "Book 01" / "Book 01.epub").resolve()) in out
-    assert str((tmp_path / "library" / "ebooks" / "Book 02" / "Book 02.pdf").resolve()) in out
-    assert str((tmp_path / "library" / "ebooks" / "Book 03" / "Book 03.azw3").resolve()) in out
+    assert str((tmp_path / "library" / "ebooks" / "Unknown Author" / "Book 01" / "Book 01.epub").resolve()) in out
+    assert str((tmp_path / "library" / "ebooks" / "Unknown Author" / "Book 02" / "Book 02.pdf").resolve()) in out
+    assert str((tmp_path / "library" / "ebooks" / "Unknown Author" / "Book 03" / "Book 03.azw3").resolve()) in out
 
 
 def test_plan_mixed_top_level_folder_and_file(tmp_path):
@@ -348,8 +397,8 @@ def test_plan_mixed_top_level_folder_and_file(tmp_path):
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_bytes(b"x")
     out = _plan_paths({"title": "Series", "qbit_name": "Series", "media_type": "audiobook"}, root, [a, b, c], tmp_path / "library" / "audiobooks")
-    assert str((tmp_path / "library" / "audiobooks" / "Book 01" / "_01_ Intro.mp3").resolve()) in out
-    assert str((tmp_path / "library" / "audiobooks" / "Book 02" / "Book 02.m4b").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book 01" / "_01_ Intro.mp3").resolve()) in out
+    assert str((tmp_path / "library" / "audiobooks" / "Unknown Author" / "Book 02" / "Book 02.m4b").resolve()) in out
 
 
 def test_plan_path_safety_cannot_escape_root(tmp_path):

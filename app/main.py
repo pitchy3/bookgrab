@@ -253,7 +253,7 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
         result = await qbit_client.add_torrent(torrent_bytes, cached_media_type, matched.get("title", "mam"))
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, result.get("category", ""), "success")
         import_status = "queued" if settings.import_enabled else "disabled"
-        record_download(mam_id=str(payload.id), title=matched.get("title", ""), media_type=cached_media_type, qbit_category=result.get("category"), qbit_hash=result.get("hash"), qbit_name=result.get("name"), save_path=result.get("save_path"), content_path=result.get("content_path"), import_status=import_status, last_error=result.get("last_error"))
+        record_download(mam_id=str(payload.id), title=matched.get("title", ""), author=matched.get("author", ""), narrator=matched.get("narrator", ""), series=matched.get("series", ""), media_type=cached_media_type, qbit_category=result.get("category"), qbit_hash=result.get("hash"), qbit_name=result.get("name"), save_path=result.get("save_path"), content_path=result.get("content_path"), import_status=import_status, last_error=result.get("last_error"))
     except (MamError, QbitError) as exc:
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, "", "failed", str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc

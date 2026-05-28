@@ -30,13 +30,22 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+def add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 def init_db() -> None:
     with get_conn() as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS download_history (id INTEGER PRIMARY KEY,mam_id TEXT,title TEXT,media_type TEXT,qbit_category TEXT,added_at TEXT,status TEXT,error TEXT)""")
         conn.execute("""CREATE TABLE IF NOT EXISTS downloads (
-          id INTEGER PRIMARY KEY,mam_id TEXT,title TEXT,media_type TEXT NOT NULL,qbit_category TEXT,qbit_hash TEXT,qbit_name TEXT,save_path TEXT,content_path TEXT,
+          id INTEGER PRIMARY KEY,mam_id TEXT,title TEXT,author TEXT,narrator TEXT,series TEXT,media_type TEXT NOT NULL,qbit_category TEXT,qbit_hash TEXT,qbit_name TEXT,save_path TEXT,content_path TEXT,
           added_at TEXT NOT NULL,completed_at TEXT,import_status TEXT NOT NULL DEFAULT 'queued',import_attempts INTEGER NOT NULL DEFAULT 0,
           imported_at TEXT,last_checked_at TEXT,last_error TEXT)""")
+        add_column_if_missing(conn, "downloads", "author", "TEXT")
+        add_column_if_missing(conn, "downloads", "narrator", "TEXT")
+        add_column_if_missing(conn, "downloads", "series", "TEXT")
         conn.execute("""CREATE TABLE IF NOT EXISTS imported_files (
           id INTEGER PRIMARY KEY,download_id INTEGER NOT NULL,source_path TEXT NOT NULL,destination_path TEXT NOT NULL,size_bytes INTEGER,
           imported_at TEXT NOT NULL,status TEXT NOT NULL,error TEXT,UNIQUE(download_id, source_path, destination_path),
@@ -53,9 +62,9 @@ def add_history(mam_id: str, title: str, media_type: str, qbit_category: str, st
 def record_download(**kwargs: Any) -> int:
     with get_conn() as conn:
         cur = conn.execute(
-            """INSERT INTO downloads (mam_id,title,media_type,qbit_category,qbit_hash,qbit_name,save_path,content_path,added_at,import_status,last_error)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (kwargs.get("mam_id"), kwargs.get("title"), kwargs["media_type"], kwargs.get("qbit_category"), kwargs.get("qbit_hash"), kwargs.get("qbit_name"), kwargs.get("save_path"), kwargs.get("content_path"), datetime.now(UTC).isoformat(), kwargs.get("import_status", "queued"), kwargs.get("last_error")),
+            """INSERT INTO downloads (mam_id,title,author,narrator,series,media_type,qbit_category,qbit_hash,qbit_name,save_path,content_path,added_at,import_status,last_error)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (kwargs.get("mam_id"), kwargs.get("title"), kwargs.get("author"), kwargs.get("narrator"), kwargs.get("series"), kwargs["media_type"], kwargs.get("qbit_category"), kwargs.get("qbit_hash"), kwargs.get("qbit_name"), kwargs.get("save_path"), kwargs.get("content_path"), datetime.now(UTC).isoformat(), kwargs.get("import_status", "queued"), kwargs.get("last_error")),
         )
         conn.commit()
         return int(cur.lastrowid)

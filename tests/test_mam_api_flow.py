@@ -43,17 +43,20 @@ def test_api_add_uses_cached_torrent_id(monkeypatch):
     monkeypatch.setattr(main.mam_client, "download_torrent", _fake_download_torrent)
     monkeypatch.setattr(main.qbit_client, "add_torrent", _fake_add_torrent)
     monkeypatch.setattr(main, "add_history", lambda *args, **kwargs: None)
-    monkeypatch.setattr(main, "record_download", lambda *args, **kwargs: None)
+    monkeypatch.setattr(main, "record_download", lambda *args, **kwargs: captured.setdefault("download", kwargs))
 
     main._search_cache.clear()
     main._search_cache_updated_at.clear()
-    main._search_cache["audiobook:test:seedersDesc"] = {522748: {"id": 522748, "title": "Book", "_torrent_id": "522748"}}
+    main._search_cache["audiobook:test:seedersDesc"] = {522748: {"id": 522748, "title": "Book", "author": "Jane Author", "narrator": "John Narrator", "series": "Series Name", "_torrent_id": "522748"}}
     main._search_cache_updated_at["audiobook:test:seedersDesc"] = time.time()
 
     result = asyncio.run(main.api_add(AddRequest(id=522748, media_type="audiobook"), _Req()))
 
     assert result["ok"] is True
     assert captured["torrent_id"] == "522748"
+    assert captured["download"]["author"] == "Jane Author"
+    assert captured["download"]["narrator"] == "John Narrator"
+    assert captured["download"]["series"] == "Series Name"
 
 
 def test_api_add_missing_torrent_id_raises_helpful_error(monkeypatch):

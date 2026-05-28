@@ -96,27 +96,43 @@ class PlexProvider:
             section_id = settings.plex_library_section_id or await self._resolve_section_id(client)
             if not section_id:
                 return []
-            resp = await client.get(f"{settings.plex_base_url}/library/sections/{section_id}/all", params={"X-Plex-Token": settings.plex_token})
-            resp.raise_for_status()
-            root = ET.fromstring(resp.text)
-            books: list[LibraryBook] = []
-            for node in root.findall(".//Track") + root.findall(".//Directory") + root.findall(".//Metadata"):
-                # Plex audiobook libraries may expose chapter files as Track entries
-                # where parentTitle represents the book/album title.
-                if node.tag == "Track":
-                    title = node.attrib.get("parentTitle") or node.attrib.get("title") or ""
-                else:
-                    title = node.attrib.get("title") or node.attrib.get("parentTitle") or ""
-                if not _normalize_text(title):
-                    continue
-                author = ", ".join(filter(None, [node.attrib.get("parentTitle", ""), node.attrib.get("grandparentTitle", "")]))
-                role_tags = [c.attrib.get("tag", "") for c in node.findall("Role") if c.attrib.get("tag")]
-                narr = ", ".join([r for r in role_tags if "narrat" in r.lower()])
-                if not author:
-                    author = ", ".join([r for r in role_tags if "narrat" not in r.lower()])
-                books.append(LibraryBook(title=title, authors=author, narrators=narr))
+            books = await self._fetch_album_books(client, section_id)
+            if not books:
+                books = await self._fetch_track_fallback_books(client, section_id)
             self._index = books
             return books
+
+    async def _fetch_album_books(self, client: httpx.AsyncClient, section_id: str) -> list[LibraryBook]:
+        resp = await client.get(f"{settings.plex_base_url}/library/sections/{section_id}/albums", params={"X-Plex-Token": settings.plex_token})
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        books: list[LibraryBook] = []
+        for node in root.findall(".//Directory"):
+            if node.attrib.get("type") == "artist":
+                continue
+            title = node.attrib.get("title", "")
+            if not _normalize_text(title):
+                continue
+            author = node.attrib.get("parentTitle", "") or node.attrib.get("grandparentTitle", "")
+            role_tags = [c.attrib.get("tag", "") for c in node.findall("Role") if c.attrib.get("tag")]
+            narr = ", ".join([r for r in role_tags if "narrat" in r.lower()])
+            books.append(LibraryBook(title=title, authors=author or "", narrators=narr))
+        return books
+
+    async def _fetch_track_fallback_books(self, client: httpx.AsyncClient, section_id: str) -> list[LibraryBook]:
+        resp = await client.get(f"{settings.plex_base_url}/library/sections/{section_id}/all", params={"X-Plex-Token": settings.plex_token})
+        resp.raise_for_status()
+        root = ET.fromstring(resp.text)
+        books: list[LibraryBook] = []
+        for node in root.findall(".//Track"):
+            title = node.attrib.get("parentTitle") or node.attrib.get("title") or ""
+            if not _normalize_text(title):
+                continue
+            author = node.attrib.get("grandparentTitle", "")
+            role_tags = [c.attrib.get("tag", "") for c in node.findall("Role") if c.attrib.get("tag")]
+            narr = ", ".join([r for r in role_tags if "narrat" in r.lower()])
+            books.append(LibraryBook(title=title, authors=author or "", narrators=narr))
+        return books
 
     def find_match(self, title: str, authors: str, narrators: str) -> LibraryMatch | None:
         for b in self._index:

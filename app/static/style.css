@@ -19,11 +19,15 @@ tr td:last-child{border-right:1px solid rgba(148,163,184,.2);border-radius:0 10p
 .warn{background:#7c2d12}.ok{background:#166534}.vip{background:#6d28d9}
 
 
-#results th:last-child,#results td:last-child{width:72px;white-space:nowrap}
+#results th:last-child,#results td:last-child{width:120px}
+.action-cell{text-align:center}
 .add-btn{white-space:nowrap;padding:.4rem .5rem;font-size:.85rem}
 .add-btn.is-adding{filter:brightness(1.15)}
 .add-btn.is-success{background:linear-gradient(135deg,#16a34a,#22c55e)}
 .add-btn.is-failed{background:linear-gradient(135deg,#dc2626,#ef4444)}
+.library-status{display:inline-flex;flex-direction:column;align-items:center;gap:.2rem;max-width:110px;line-height:1.2}
+.library-status-main{display:inline-block;padding:.14rem .45rem;border-radius:999px;font-size:.72rem;font-weight:600;background:#1e293b;color:#cbd5e1;border:1px solid rgba(148,163,184,.35);white-space:nowrap}
+.library-status-provider{font-size:.72rem;color:#9fb0d8;text-align:center;overflow-wrap:anywhere;word-break:break-word}
 .err{color:#fca5a5}.ok{color:#86efac}.hidden{display:none}
 
 .status-row{margin:.1rem 0 .35rem 0}.status-row:last-child{margin-bottom:0}

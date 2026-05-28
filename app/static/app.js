@@ -50,6 +50,18 @@ function createBadge(text, className) {
   return badge;
 }
 
+function buildLibraryTooltip(matches) {
+  return (matches || []).map(match => {
+    const details = [match.title, match.author, match.narrator]
+      .map(value => (value || '').trim())
+      .filter(Boolean);
+    if (details.length === 0) {
+      return match.provider;
+    }
+    return `${match.provider}: ${details.join(' | ')}`;
+  }).join('\n');
+}
+
 function renderResults(results){
   tbody.innerHTML = '';
   const mediaType = document.getElementById('mediaType').value;
@@ -130,20 +142,34 @@ function renderResults(results){
     statusTd.append(availabilityRow, highlightsRow);
 
     const actionTd = document.createElement('td');
+    actionTd.className = 'action-cell';
     const button = document.createElement('button');
     button.className = 'add-btn';
     button.dataset.id = String(r.id);
     button.dataset.media = mediaType;
 
     if (r.in_library === true) {
-      button.textContent = 'In library';
-      button.disabled = true;
       const providers = (r.library_matches || []).map(m => m.provider);
-      const label = providers.length ? `Already in ${providers.join(' + ' )}` : 'Already in library';
-      button.title = (r.library_matches || []).map(m => `${m.provider}: ${m.title} | ${m.author} | ${m.narrator}`).join('\n') || label;
-      const badge = createBadge(label, 'ok');
-      badge.title = button.title;
-      actionTd.append(button, document.createTextNode(' '), badge);
+      const providersText = providers.length ? providers.join(' + ') : 'Configured library';
+      const label = providers.length ? `Already in ${providersText}` : 'Already in library';
+      const detailTooltip = buildLibraryTooltip(r.library_matches || []);
+
+      const status = document.createElement('div');
+      status.className = 'library-status';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-label', label);
+      status.title = detailTooltip || label;
+
+      const statusMain = document.createElement('span');
+      statusMain.className = 'library-status-main';
+      statusMain.textContent = 'In library';
+
+      const statusProvider = document.createElement('span');
+      statusProvider.className = 'library-status-provider';
+      statusProvider.textContent = providersText;
+
+      status.append(statusMain, statusProvider);
+      actionTd.appendChild(status);
     } else {
       button.textContent = 'Grab';
       button.onclick = doAdd;

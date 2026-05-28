@@ -50,6 +50,14 @@ function createBadge(text, className) {
   return badge;
 }
 
+
+function abbreviateProvider(provider) {
+  if ((provider || '').toLowerCase() === 'audiobookshelf') {
+    return 'ABS';
+  }
+  return provider;
+}
+
 function buildLibraryTooltip(matches) {
   return (matches || []).map(match => {
     const details = [match.title, match.author, match.narrator]
@@ -149,7 +157,7 @@ function renderResults(results){
     button.dataset.media = mediaType;
 
     if (r.in_library === true) {
-      const providers = (r.library_matches || []).map(m => m.provider);
+      const providers = (r.library_matches || []).map(m => abbreviateProvider(m.provider));
       const providersText = providers.length ? providers.join(' + ') : 'Configured library';
       const label = providers.length ? `Already in ${providersText}` : 'Already in library';
       const detailTooltip = buildLibraryTooltip(r.library_matches || []);
@@ -162,7 +170,7 @@ function renderResults(results){
 
       const statusMain = document.createElement('span');
       statusMain.className = 'library-status-main';
-      statusMain.textContent = 'In library';
+      statusMain.textContent = 'in library';
 
       const statusProvider = document.createElement('span');
       statusProvider.className = 'library-status-provider';

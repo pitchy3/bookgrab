@@ -182,27 +182,39 @@ def test_api_search_plex_error_does_not_break(monkeypatch):
     assert row["library_matches"] == []
 
 
-def test_api_search_marks_rows_already_in_qbit(monkeypatch):
+def test_api_search_marks_rows_already_in_qbit_by_candidate_hashes(monkeypatch):
     monkeypatch.setattr(main.settings, "app_auth_enabled", False)
     torrent_hash = "abcdef1234567890abcdef1234567890abcdef12"
+    other_hash = "1234567890abcdef1234567890abcdef12345678"
+    captured = {}
 
     async def _fake_search(**kwargs):
-        return [{"id": 44, "title": "Loaded Book", "_torrent_id": "44", "_torrent_hash": torrent_hash, "seeders": 1, "leechers": 0, "catname": "Audio"}]
+        return [
+            {"id": 44, "title": "Loaded Book", "_torrent_id": "44", "_torrent_hash": torrent_hash, "seeders": 1, "leechers": 0, "catname": "Audio"},
+            {"id": 45, "title": "Other Book", "_torrent_id": "45", "_torrent_hash": other_hash, "seeders": 1, "leechers": 0, "catname": "Audio"},
+        ]
 
-    async def _fake_get_torrents():
+    async def _fake_get_torrents_by_hashes(hashes):
+        captured["hashes"] = hashes
         return [{"hash": torrent_hash.upper(), "name": "Loaded Book"}]
 
+    async def _fail_full_list():
+        raise AssertionError("search should not fetch the full qBittorrent torrent list")
+
     monkeypatch.setattr(main.mam_client, "search", _fake_search)
-    monkeypatch.setattr(main.qbit_client, "get_torrents", _fake_get_torrents)
+    monkeypatch.setattr(main.qbit_client, "get_torrents_by_hashes", _fake_get_torrents_by_hashes)
+    monkeypatch.setattr(main.qbit_client, "get_torrents", _fail_full_list)
 
     client = TestClient(main.app)
     response = client.post("/api/search", json={"query": "loaded", "media_type": "audiobook", "search_in": ["title"], "sort": "seedersDesc"})
 
     assert response.status_code == 200
-    row = response.json()["results"][0]
-    assert row["in_qbit"] is True
-    assert row["qbit_name"] == "Loaded Book"
-    assert "_torrent_hash" not in row
+    assert set(captured["hashes"]) == {torrent_hash, other_hash}
+    loaded, other = response.json()["results"]
+    assert loaded["in_qbit"] is True
+    assert loaded["qbit_name"] == "Loaded Book"
+    assert other["in_qbit"] is False
+    assert "_torrent_hash" not in loaded
 
 
 def test_api_search_qbit_error_does_not_break(monkeypatch):
@@ -212,11 +224,11 @@ def test_api_search_qbit_error_does_not_break(monkeypatch):
     async def _fake_search(**kwargs):
         return [{"id": 45, "title": "Book", "_torrent_id": "45", "_torrent_hash": torrent_hash, "seeders": 1, "leechers": 0, "catname": "Audio"}]
 
-    async def _boom():
+    async def _boom(_hashes):
         raise RuntimeError("qbit down")
 
     monkeypatch.setattr(main.mam_client, "search", _fake_search)
-    monkeypatch.setattr(main.qbit_client, "get_torrents", _boom)
+    monkeypatch.setattr(main.qbit_client, "get_torrents_by_hashes", _boom)
 
     client = TestClient(main.app)
     response = client.post("/api/search", json={"query": "book", "media_type": "audiobook", "search_in": ["title"], "sort": "seedersDesc"})
@@ -238,3 +250,53 @@ def test_api_add_rejects_cached_qbit_match(monkeypatch):
 
     assert response.status_code == 409
     assert "already loaded" in response.json()["detail"]
+
+
+def test_api_search_without_source_hashes_does_not_query_qbit(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+
+    async def _fake_search(**kwargs):
+        return [{"id": 46, "title": "No Hash Book", "_torrent_id": "46", "seeders": 1, "leechers": 0, "catname": "Audio"}]
+
+    async def _fail_hash_lookup(_hashes):
+        raise AssertionError("qBittorrent should not be queried without candidate hashes")
+
+    monkeypatch.setattr(main.mam_client, "search", _fake_search)
+    monkeypatch.setattr(main.qbit_client, "get_torrents_by_hashes", _fail_hash_lookup)
+
+    client = TestClient(main.app)
+    response = client.post("/api/search", json={"query": "book", "media_type": "audiobook", "search_in": ["title"], "sort": "seedersDesc"})
+
+    assert response.status_code == 200
+    row = response.json()["results"][0]
+    assert row["in_qbit"] is False
+    assert row["qbit_name"] == ""
+
+
+def test_api_add_rechecks_qbit_hash_before_download(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+    torrent_hash = "abcdef1234567890abcdef1234567890abcdef12"
+    called = {"download": False}
+
+    async def _fake_get_torrents_by_hashes(hashes):
+        assert hashes == [torrent_hash]
+        return [{"hash": torrent_hash, "name": "Loaded Book"}]
+
+    async def _fake_download_torrent(_torrent_id):
+        called["download"] = True
+        return b"d8:announce"
+
+    monkeypatch.setattr(main.qbit_client, "get_torrents_by_hashes", _fake_get_torrents_by_hashes)
+    monkeypatch.setattr(main.mam_client, "download_torrent", _fake_download_torrent)
+
+    main._search_cache.clear()
+    main._search_cache_updated_at.clear()
+    main._search_cache["audiobook:test:seedersDesc"] = {1: {"id": 1, "title": "Book", "_torrent_id": "1", "_torrent_hash": torrent_hash, "in_qbit": False}}
+    main._search_cache_updated_at["audiobook:test:seedersDesc"] = time.time()
+
+    client = TestClient(main.app)
+    response = client.post("/api/add", json={"id": 1, "media_type": "audiobook"})
+
+    assert response.status_code == 409
+    assert "already loaded" in response.json()["detail"]
+    assert called["download"] is False

@@ -118,7 +118,7 @@ async def _annotate_qbit_presence(rows: list[dict[str, Any]], sanitized: list[di
     loaded: dict[str, dict[str, Any]] = {}
     if requested_hashes:
         try:
-            torrents = await qbit_client.get_torrents()
+            torrents = await qbit_client.get_torrents_by_hashes(requested_hashes)
         except Exception:  # noqa: BLE001
             torrents = []
         loaded = {
@@ -282,10 +282,16 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
     if not matched or cached_media_type not in {"audiobook", "ebook"}:
         raise HTTPException(status_code=404, detail="Result not found in recent server-side search cache")
 
-    if matched.get("in_qbit") is True:
-        raise HTTPException(status_code=409, detail="Torrent is already loaded in qBittorrent")
+    torrent_hash = _normalize_qbit_hash(matched.get("_torrent_hash"))
 
     try:
+        if torrent_hash:
+            existing = await qbit_client.get_torrents_by_hashes([torrent_hash])
+            if existing:
+                raise HTTPException(status_code=409, detail="Torrent is already loaded in qBittorrent")
+        elif matched.get("in_qbit") is True:
+            raise HTTPException(status_code=409, detail="Torrent is already loaded in qBittorrent")
+
         torrent_id = str(matched.get("_torrent_id") or "").strip()
         if not torrent_id:
             keys = sorted(matched.keys())

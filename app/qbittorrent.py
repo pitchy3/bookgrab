@@ -6,9 +6,33 @@ import httpx
 
 from app.config import settings
 
+_HASHES_QUERY_CHUNK_SIZE = 50
+
 
 class QbitError(Exception):
     pass
+
+
+def _normalize_hash(value: str | None) -> str:
+    text = str(value or "").strip().lower()
+    if len(text) == 40 and all(char in "0123456789abcdef" for char in text):
+        return text
+    return ""
+
+
+def _dedupe_hashes(hashes: list[str] | set[str] | tuple[str, ...]) -> list[str]:
+    normalized = []
+    seen = set()
+    for raw_hash in hashes:
+        value = _normalize_hash(raw_hash)
+        if value and value not in seen:
+            normalized.append(value)
+            seen.add(value)
+    return normalized
+
+
+def _chunks(values: list[str], size: int) -> list[list[str]]:
+    return [values[index:index + size] for index in range(0, len(values), size)]
 
 
 class QbitClient:
@@ -42,15 +66,28 @@ class QbitClient:
             if own:
                 await client.aclose()
 
-    async def get_torrent(self, hash: str) -> dict | None:
+    async def get_torrents_by_hashes(self, hashes: list[str] | set[str] | tuple[str, ...]) -> list[dict]:
+        normalized_hashes = _dedupe_hashes(hashes)
+        if not normalized_hashes:
+            return []
+
+        torrents = []
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            await self._login(client)
-            resp = await client.get(f"{self.base_url}/api/v2/torrents/info", params={"hashes": hash})
-            resp.raise_for_status()
-            js = resp.json()
-            if not js:
-                return None
-            return self._normalize(js[0])
+            try:
+                await self._login(client)
+                for chunk in _chunks(normalized_hashes, _HASHES_QUERY_CHUNK_SIZE):
+                    resp = await client.get(f"{self.base_url}/api/v2/torrents/info", params={"hashes": "|".join(chunk)})
+                    resp.raise_for_status()
+                    torrents.extend(self._normalize(torrent) for torrent in resp.json())
+            except httpx.HTTPError as exc:
+                raise QbitError("qBittorrent is unavailable") from exc
+        return torrents
+
+    async def get_torrent(self, hash: str) -> dict | None:
+        torrents = await self.get_torrents_by_hashes([hash])
+        if not torrents:
+            return None
+        return torrents[0]
 
     async def add_torrent(self, torrent_bytes: bytes, media_type: str, name: str) -> dict:
         expected_hash = _torrent_info_hash(torrent_bytes)
@@ -63,7 +100,6 @@ class QbitClient:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 await self._login(client)
-                before = await self.get_torrents(client)
                 resp = await client.post(f"{self.base_url}/api/v2/torrents/add", data=form_data, files=files)
             except httpx.HTTPError as exc:
                 raise QbitError("qBittorrent is unavailable") from exc

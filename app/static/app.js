@@ -78,6 +78,16 @@ function buildLibraryTooltip(matches) {
   return buildLibraryMatchDetails(matches).join('\n');
 }
 
+function appendActionLabel(container, label, title = '') {
+  const warning = document.createElement('div');
+  warning.className = 'library-warning-label';
+  warning.setAttribute('role', 'status');
+  warning.setAttribute('aria-label', label);
+  warning.title = title || label;
+  warning.textContent = label;
+  container.appendChild(warning);
+}
+
 function getLibraryProviders(matches) {
   return [...new Set((matches || [])
     .map(match => abbreviateProvider((match.provider || '').trim()))
@@ -246,22 +256,28 @@ function renderResults(results){
     button.dataset.id = String(r.id);
     button.dataset.media = mediaType;
 
-    button.textContent = 'Grab';
-    button.onclick = event => doAdd(event, r);
+    if (r.in_qbit === true) {
+      button.disabled = true;
+      button.classList.add('is-disabled');
+      button.setAttribute('aria-disabled', 'true');
+      button.title = 'This torrent is already loaded in qBittorrent';
+      button.textContent = 'Loaded';
+    } else {
+      button.textContent = 'Grab';
+      button.onclick = event => doAdd(event, r);
+    }
     actionTd.appendChild(button);
+
+    if (r.in_qbit === true) {
+      appendActionLabel(actionTd, 'In qBit', r.qbit_name ? `qBittorrent: ${r.qbit_name}` : 'Already loaded in qBittorrent');
+    }
 
     if (r.in_library === true) {
       const providers = getLibraryProviders(r.library_matches || []);
       const label = providers.length ? `In ${providers.join(' + ')}` : 'In library';
       const detailTooltip = buildLibraryTooltip(r.library_matches || []);
 
-      const warning = document.createElement('div');
-      warning.className = 'library-warning-label';
-      warning.setAttribute('role', 'status');
-      warning.setAttribute('aria-label', label);
-      warning.title = detailTooltip || label;
-      warning.textContent = label;
-      actionTd.appendChild(warning);
+      appendActionLabel(actionTd, label, detailTooltip || label);
     }
 
     tr.append(titleTd, detailsTd, statusTd, actionTd);
@@ -270,6 +286,10 @@ function renderResults(results){
 }
 
 async function doAdd(evt, result){
+  if (result?.in_qbit === true) {
+    return;
+  }
+
   const button = evt.currentTarget;
   if (button.dataset.addPending === 'true') {
     return;

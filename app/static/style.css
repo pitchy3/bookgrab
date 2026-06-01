@@ -28,6 +28,8 @@ tr td:last-child{border-right:1px solid rgba(148,163,184,.2);border-radius:0 10p
 .add-btn.is-adding{filter:brightness(1.15)}
 .add-btn.is-success{background:linear-gradient(135deg,#16a34a,#22c55e)}
 .add-btn.is-failed{background:linear-gradient(135deg,#dc2626,#ef4444)}
+.add-btn:disabled,.add-btn.is-disabled{cursor:not-allowed;background:linear-gradient(135deg,#475569,#64748b);color:#cbd5e1;opacity:.72;filter:none}
+.add-btn:disabled:hover,.add-btn.is-disabled:hover{filter:none}
 .library-warning-label{display:block;width:fit-content;max-width:100%;margin:.25rem auto 0;padding:.12rem .4rem;border-radius:999px;background:#7c2d12;color:#fed7aa;font-size:.7rem;font-weight:600;line-height:1.2;white-space:normal;overflow-wrap:anywhere}
 .confirm-overlay{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(2,6,23,.72)}
 .confirm-dialog{width:min(100%,420px);max-height:calc(100vh - 2rem);overflow:auto;background:#0f172a;color:#ecf1ff;border:1px solid rgba(148,163,184,.35);border-radius:14px;padding:1rem;box-shadow:0 20px 48px rgba(2,6,23,.55)}

@@ -35,6 +35,16 @@ def test_normalize_result_stores_id_as_private_torrent_reference():
     assert row["_torrent_id"] == "522748"
 
 
+def test_normalize_result_stores_valid_info_hash():
+    row = normalize_result({"id": "522748", "title": "X", "info_hash": "ABCDEF1234567890ABCDEF1234567890ABCDEF12"})
+    assert row["_torrent_hash"] == "abcdef1234567890abcdef1234567890abcdef12"
+
+
+def test_normalize_result_ignores_non_info_hash_values():
+    row = normalize_result({"id": "522748", "title": "X", "hash": "not-a-qbit-info-hash"})
+    assert row["_torrent_hash"] == ""
+
+
 def test_normalize_result_missing_id_leaves_empty_private_torrent_reference():
     row = normalize_result({"title": "X"})
     assert row["_torrent_id"] == ""

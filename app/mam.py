@@ -86,6 +86,13 @@ def _parse_flag(value: Any) -> bool:
     return bool(value)
 
 
+def _normalize_info_hash(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if len(text) == 40 and all(char in "0123456789abcdef" for char in text):
+        return text
+    return ""
+
+
 def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
     torrent_id = str(item.get("id", "")).strip()
     return {
@@ -105,6 +112,7 @@ def normalize_result(item: dict[str, Any]) -> dict[str, Any]:
         "added": str(item.get("added", "")),
         "catname": str(item.get("catname", "")),
         "_torrent_id": torrent_id,
+        "_torrent_hash": _normalize_info_hash(item.get("info_hash") or item.get("infohash") or item.get("torrent_hash") or item.get("hash")),
     }
 
 

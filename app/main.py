@@ -104,6 +104,38 @@ def _prune_search_cache(now: float | None = None) -> None:
         _search_cache_updated_at.pop(key, None)
 
 
+def _normalize_qbit_hash(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if len(text) == 40 and all(char in "0123456789abcdef" for char in text):
+        return text
+    return ""
+
+
+async def _annotate_qbit_presence(rows: list[dict[str, Any]], sanitized: list[dict[str, Any]]) -> None:
+    requested_hashes = {_normalize_qbit_hash(row.get("_torrent_hash")) for row in rows}
+    requested_hashes.discard("")
+
+    loaded: dict[str, dict[str, Any]] = {}
+    if requested_hashes:
+        try:
+            torrents = await qbit_client.get_torrents()
+        except Exception:  # noqa: BLE001
+            torrents = []
+        loaded = {
+            normalized_hash: torrent
+            for torrent in torrents
+            if (normalized_hash := _normalize_qbit_hash(torrent.get("hash"))) in requested_hashes
+        }
+
+    for row, safe in zip(rows, sanitized, strict=False):
+        torrent_hash = _normalize_qbit_hash(row.get("_torrent_hash"))
+        match = loaded.get(torrent_hash)
+        in_qbit = match is not None
+        row["in_qbit"] = in_qbit
+        safe["in_qbit"] = in_qbit
+        safe["qbit_name"] = match.get("name") if match else ""
+
+
 @app.on_event("startup")
 async def startup() -> None:
     uid = os.getuid()
@@ -207,20 +239,26 @@ async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]
     per_id: dict[int, dict[str, Any]] = {}
     for row in rows:
         per_id[row["id"]] = row
-        safe = {k: v for k, v in row.items() if k != "_torrent_id"}
+        safe = {k: v for k, v in row.items() if not k.startswith("_")}
         sanitized.append(safe)
     if payload.media_type == "audiobook":
-        for safe in sanitized:
+        for row, safe in zip(rows, sanitized, strict=False):
             try:
                 in_library, library_matches = await library_presence_service.annotate(safe)
             except Exception:  # noqa: BLE001
                 in_library, library_matches = False, []
+            row["in_library"] = in_library
+            row["library_matches"] = library_matches
             safe["in_library"] = in_library
             safe["library_matches"] = library_matches
     else:
-        for safe in sanitized:
+        for row, safe in zip(rows, sanitized, strict=False):
+            row["in_library"] = False
+            row["library_matches"] = []
             safe["in_library"] = False
             safe["library_matches"] = []
+
+    await _annotate_qbit_presence(rows, sanitized)
 
     cache_key = f"{payload.media_type}:{payload.query.lower()}:{payload.sort}"
     _search_cache[cache_key] = per_id
@@ -243,6 +281,9 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
             break
     if not matched or cached_media_type not in {"audiobook", "ebook"}:
         raise HTTPException(status_code=404, detail="Result not found in recent server-side search cache")
+
+    if matched.get("in_qbit") is True:
+        raise HTTPException(status_code=409, detail="Torrent is already loaded in qBittorrent")
 
     try:
         torrent_id = str(matched.get("_torrent_id") or "").strip()

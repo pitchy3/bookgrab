@@ -9,6 +9,7 @@ from app.config import settings
 from app.db import (
     get_qbit_mam_cache_by_hash,
     get_qbit_mam_sync_status,
+    mark_qbit_mam_inventory_seen,
     mark_qbit_mam_seen,
     upsert_qbit_mam_cache,
 )
@@ -101,6 +102,8 @@ async def sync_qbit_mam_hashes(
             pending.append((qbit_hash, torrent))
         else:
             cached_count += 1
+
+    mark_qbit_mam_inventory_seen(now_iso)
 
     max_per_run = settings.mam_hash_lookup_max_per_run
     run_pending = pending[:max_per_run] if max_per_run else pending

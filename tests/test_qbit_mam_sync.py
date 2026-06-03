@@ -1,7 +1,7 @@
 import asyncio
 
 from app import main
-from app.db import get_conn, init_db, upsert_qbit_mam_cache
+from app.db import get_conn, get_qbit_mam_matches_by_mam_ids, init_db, upsert_qbit_mam_cache
 from app.qbit_mam_sync import sync_qbit_mam_hashes
 
 HASH1 = "a" * 40
@@ -144,6 +144,27 @@ def test_api_search_marks_in_qbit_from_cache_without_hash_lookup(monkeypatch, tm
     assert row["qbit_name"] == "Loaded Copy"
     assert "_torrent_hash" not in row
 
+
+def test_qbit_sync_empty_inventory_invalidates_previous_matches(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    upsert_qbit_mam_cache(
+        qbit_hash=HASH1,
+        lookup_status="matched",
+        last_seen_in_qbit="2026-06-03T00:00:00+00:00",
+        looked_up_at="2026-06-03T00:00:00+00:00",
+        mam_id=110685,
+        mam_title="The First Law Trilogy",
+        qbit_name="Loaded Copy",
+    )
+    assert 110685 in get_qbit_mam_matches_by_mam_ids([110685])
+
+    result = asyncio.run(sync_qbit_mam_hashes(FakeQbit([]), FakeMam({}), logger=lambda _msg: None))
+
+    assert result["qbit_torrents_found"] == 0
+    assert result["processed"] == 0
+    assert get_qbit_mam_matches_by_mam_ids([110685]) == {}
 
 def test_api_add_blocks_duplicate_by_computed_hash_even_with_stale_cache(monkeypatch):
     from fastapi.testclient import TestClient

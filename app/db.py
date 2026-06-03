@@ -61,6 +61,9 @@ def init_db() -> None:
           last_seen_in_qbit TEXT NOT NULL,
           looked_up_at TEXT NOT NULL,
           last_error TEXT)""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS qbit_mam_sync_state (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          qbit_inventory_seen_at TEXT NOT NULL)""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_qbit_mam_cache_mam_id ON qbit_mam_cache(mam_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_qbit_mam_cache_status ON qbit_mam_cache(lookup_status)")
         conn.commit()
@@ -192,6 +195,16 @@ def mark_qbit_mam_seen(qbit_hash: str, qbit_name: str | None, qbit_category: str
         conn.commit()
 
 
+def mark_qbit_mam_inventory_seen(qbit_inventory_seen_at: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO qbit_mam_sync_state (id,qbit_inventory_seen_at) VALUES (1,?)
+            ON CONFLICT(id) DO UPDATE SET qbit_inventory_seen_at=excluded.qbit_inventory_seen_at""",
+            (qbit_inventory_seen_at,),
+        )
+        conn.commit()
+
+
 def get_qbit_mam_cache_by_hash(qbit_hash: str) -> sqlite3.Row | None:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM qbit_mam_cache WHERE qbit_hash=?", (qbit_hash,)).fetchone()
@@ -207,7 +220,10 @@ def get_qbit_mam_matches_by_mam_ids(mam_ids: list[int]) -> dict[int, sqlite3.Row
                 f"""SELECT * FROM qbit_mam_cache
                 WHERE lookup_status='matched'
                   AND mam_id IN ({placeholders})
-                  AND last_seen_in_qbit = (SELECT MAX(last_seen_in_qbit) FROM qbit_mam_cache)""",
+                  AND last_seen_in_qbit = COALESCE(
+                    (SELECT qbit_inventory_seen_at FROM qbit_mam_sync_state WHERE id=1),
+                    (SELECT MAX(last_seen_in_qbit) FROM qbit_mam_cache)
+                  )""",
                 mam_ids,
             ).fetchall()
     except sqlite3.OperationalError as exc:
@@ -223,7 +239,9 @@ def get_qbit_mam_sync_status() -> dict[str, Any]:
             counts_rows = conn.execute("SELECT lookup_status, COUNT(*) as c FROM qbit_mam_cache GROUP BY lookup_status").fetchall()
             counts = {row["lookup_status"]: row["c"] for row in counts_rows}
             total = conn.execute("SELECT COUNT(*) AS c FROM qbit_mam_cache").fetchone()["c"]
-            last_sync = conn.execute("SELECT MAX(looked_up_at) AS ts FROM qbit_mam_cache").fetchone()["ts"]
+            last_lookup = conn.execute("SELECT MAX(looked_up_at) AS ts FROM qbit_mam_cache").fetchone()["ts"]
+            last_inventory = conn.execute("SELECT qbit_inventory_seen_at AS ts FROM qbit_mam_sync_state WHERE id=1").fetchone()
+            last_sync = last_inventory["ts"] if last_inventory is not None else last_lookup
             last_errors = conn.execute("SELECT COUNT(*) AS c FROM qbit_mam_cache WHERE lookup_status='error'").fetchone()["c"]
     except sqlite3.OperationalError as exc:
         if "no such table" not in str(exc):

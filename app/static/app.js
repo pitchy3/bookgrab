@@ -246,9 +246,23 @@ function renderResults(results){
     button.dataset.id = String(r.id);
     button.dataset.media = mediaType;
 
-    button.textContent = 'Grab';
-    button.onclick = event => doAdd(event, r);
+    if (r.in_qbit === true) {
+      button.textContent = 'Loaded';
+      button.disabled = true;
+      button.title = r.qbit_name ? `Already loaded in qBittorrent as ${r.qbit_name}` : 'Already loaded in qBittorrent';
+    } else {
+      button.textContent = 'Grab';
+      button.onclick = event => doAdd(event, r);
+    }
     actionTd.appendChild(button);
+
+    if (r.in_qbit === true) {
+      const loaded = document.createElement('div');
+      loaded.className = 'qbit-loaded-label';
+      loaded.setAttribute('role', 'status');
+      loaded.textContent = r.qbit_name ? `In qBit: ${r.qbit_name}` : 'In qBit';
+      actionTd.appendChild(loaded);
+    }
 
     if (r.in_library === true) {
       const providers = getLibraryProviders(r.library_matches || []);

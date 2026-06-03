@@ -33,14 +33,18 @@ def test_api_add_uses_cached_torrent_id(monkeypatch):
 
     async def _fake_download_torrent(torrent_id: str):
         captured["torrent_id"] = torrent_id
-        return b"d8:announce"
+        return b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
 
     async def _fake_add_torrent(torrent_bytes: bytes, media_type: str, title: str):
         assert torrent_bytes.startswith(b"d")
         return {"hash": "abc", "category": "audiobooks", "name": "Book", "save_path": "/tmp", "content_path": "/tmp/Book"}
 
     monkeypatch.setattr(main, "_require_login", lambda request: None)
+    async def _fake_get_torrent(_hash: str):
+        return None
+
     monkeypatch.setattr(main.mam_client, "download_torrent", _fake_download_torrent)
+    monkeypatch.setattr(main.qbit_client, "get_torrent", _fake_get_torrent)
     monkeypatch.setattr(main.qbit_client, "add_torrent", _fake_add_torrent)
     monkeypatch.setattr(main, "add_history", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "record_download", lambda *args, **kwargs: captured.setdefault("download", kwargs))

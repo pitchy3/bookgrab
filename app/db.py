@@ -50,6 +50,19 @@ def init_db() -> None:
           id INTEGER PRIMARY KEY,download_id INTEGER NOT NULL,source_path TEXT NOT NULL,destination_path TEXT NOT NULL,size_bytes INTEGER,
           imported_at TEXT NOT NULL,status TEXT NOT NULL,error TEXT,UNIQUE(download_id, source_path, destination_path),
           FOREIGN KEY(download_id) REFERENCES downloads(id))""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS qbit_mam_cache (
+          qbit_hash TEXT PRIMARY KEY,
+          mam_id INTEGER,
+          mam_title TEXT,
+          media_type TEXT,
+          qbit_name TEXT,
+          qbit_category TEXT,
+          lookup_status TEXT NOT NULL,
+          last_seen_in_qbit TEXT NOT NULL,
+          looked_up_at TEXT NOT NULL,
+          last_error TEXT)""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qbit_mam_cache_mam_id ON qbit_mam_cache(mam_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_qbit_mam_cache_status ON qbit_mam_cache(lookup_status)")
         conn.commit()
 
 
@@ -143,3 +156,80 @@ def get_import_status(limit: int = 20) -> dict[str, Any]:
         recent = [dict(r) for r in conn.execute("SELECT * FROM downloads ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
         files = [dict(r) for r in conn.execute("SELECT * FROM imported_files ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
         return {"counts": counts, "recent_downloads": recent, "recent_imported_files": files, "recent_files": files}
+
+
+def upsert_qbit_mam_cache(
+    qbit_hash: str,
+    lookup_status: str,
+    last_seen_in_qbit: str,
+    looked_up_at: str,
+    mam_id: int | None = None,
+    mam_title: str | None = None,
+    media_type: str | None = None,
+    qbit_name: str | None = None,
+    qbit_category: str | None = None,
+    last_error: str | None = None,
+) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO qbit_mam_cache (qbit_hash,mam_id,mam_title,media_type,qbit_name,qbit_category,lookup_status,last_seen_in_qbit,looked_up_at,last_error)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(qbit_hash) DO UPDATE SET
+              mam_id=excluded.mam_id, mam_title=excluded.mam_title, media_type=excluded.media_type, qbit_name=excluded.qbit_name,
+              qbit_category=excluded.qbit_category, lookup_status=excluded.lookup_status, last_seen_in_qbit=excluded.last_seen_in_qbit,
+              looked_up_at=excluded.looked_up_at, last_error=excluded.last_error""",
+            (qbit_hash, mam_id, mam_title, media_type, qbit_name, qbit_category, lookup_status, last_seen_in_qbit, looked_up_at, last_error),
+        )
+        conn.commit()
+
+
+def mark_qbit_mam_seen(qbit_hash: str, qbit_name: str | None, qbit_category: str | None, last_seen_in_qbit: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE qbit_mam_cache SET qbit_name=?, qbit_category=?, last_seen_in_qbit=? WHERE qbit_hash=?",
+            (qbit_name, qbit_category, last_seen_in_qbit, qbit_hash),
+        )
+        conn.commit()
+
+
+def get_qbit_mam_cache_by_hash(qbit_hash: str) -> sqlite3.Row | None:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM qbit_mam_cache WHERE qbit_hash=?", (qbit_hash,)).fetchone()
+
+
+def get_qbit_mam_matches_by_mam_ids(mam_ids: list[int]) -> dict[int, sqlite3.Row]:
+    if not mam_ids:
+        return {}
+    placeholders = ",".join("?" for _ in mam_ids)
+    try:
+        with get_conn() as conn:
+            rows = conn.execute(
+                f"""SELECT * FROM qbit_mam_cache
+                WHERE lookup_status='matched'
+                  AND mam_id IN ({placeholders})
+                  AND last_seen_in_qbit = (SELECT MAX(last_seen_in_qbit) FROM qbit_mam_cache)""",
+                mam_ids,
+            ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return {}
+        raise
+    return {int(row["mam_id"]): row for row in rows if row["mam_id"] is not None}
+
+
+def get_qbit_mam_sync_status() -> dict[str, Any]:
+    try:
+        with get_conn() as conn:
+            counts_rows = conn.execute("SELECT lookup_status, COUNT(*) as c FROM qbit_mam_cache GROUP BY lookup_status").fetchall()
+            counts = {row["lookup_status"]: row["c"] for row in counts_rows}
+            total = conn.execute("SELECT COUNT(*) AS c FROM qbit_mam_cache").fetchone()["c"]
+            last_sync = conn.execute("SELECT MAX(looked_up_at) AS ts FROM qbit_mam_cache").fetchone()["ts"]
+            last_errors = conn.execute("SELECT COUNT(*) AS c FROM qbit_mam_cache WHERE lookup_status='error'").fetchone()["c"]
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):
+            raise
+        counts = {}
+        total = 0
+        last_sync = None
+        last_errors = 0
+    return {"cached_mappings_count": total, "counts": counts, "last_sync_time": last_sync, "last_error_count": last_errors}

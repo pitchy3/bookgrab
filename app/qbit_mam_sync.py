@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import re
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+if importlib.util.find_spec("croniter") is not None:
+    from croniter import croniter as _croniter
+else:
+    _croniter = None
 
 from app.config import settings
 from app.db import (
@@ -17,6 +24,74 @@ from app.mam import MamClient
 from app.qbittorrent import QbitClient
 
 INFO_HASH_RE = re.compile(r"^[a-fA-F0-9]{40}$")
+_CRON_FIELD_RANGES = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
+qbit_mam_sync_lock = asyncio.Lock()
+
+
+class QbitMamSyncAlreadyRunning(RuntimeError):
+    pass
+
+
+def _parse_cron_field(field: str, minimum: int, maximum: int) -> set[int]:
+    values: set[int] = set()
+    for part in field.split(","):
+        if not part:
+            raise ValueError("empty cron field part")
+        step = 1
+        base = part
+        if "/" in part:
+            base, step_text = part.split("/", 1)
+            step = int(step_text)
+            if step <= 0:
+                raise ValueError("cron step must be positive")
+        if base == "*":
+            start, end = minimum, maximum
+        elif "-" in base:
+            start_text, end_text = base.split("-", 1)
+            start, end = int(start_text), int(end_text)
+        else:
+            start = end = int(base)
+        if start < minimum or end > maximum or start > end:
+            raise ValueError("cron field out of range")
+        values.update(range(start, end + 1, step))
+    return values
+
+
+def _is_valid_cron_expression(expression: str) -> bool:
+    fields = expression.split()
+    if len(fields) != 5:
+        return False
+    if _croniter is not None:
+        return bool(_croniter.is_valid(expression))
+    try:
+        for field, (minimum, maximum) in zip(fields, _CRON_FIELD_RANGES, strict=True):
+            _parse_cron_field(field, minimum, maximum)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _next_cron_datetime(expression: str, base: datetime) -> datetime:
+    if _croniter is not None:
+        return _croniter(expression, base).get_next(datetime)
+    minute_values, hour_values, day_values, month_values, weekday_values = [
+        _parse_cron_field(field, minimum, maximum)
+        for field, (minimum, maximum) in zip(expression.split(), _CRON_FIELD_RANGES, strict=True)
+    ]
+    candidate = (base + timedelta(minutes=1)).replace(second=0, microsecond=0)
+    limit = candidate + timedelta(days=366 * 5)
+    while candidate <= limit:
+        cron_weekday = (candidate.weekday() + 1) % 7
+        if (
+            candidate.minute in minute_values
+            and candidate.hour in hour_values
+            and candidate.day in day_values
+            and candidate.month in month_values
+            and cron_weekday in weekday_values
+        ):
+            return candidate
+        candidate += timedelta(minutes=1)
+    raise RuntimeError("Could not calculate next MAM_HASH_LOOKUP_CRON occurrence within 5 years")
 
 
 def normalize_info_hash(value: Any) -> str | None:
@@ -187,3 +262,93 @@ async def sync_qbit_mam_hashes(
         "no_match": no_match,
         "errors": errors,
     }
+
+
+def validate_qbit_mam_sync_cron_config() -> tuple[str, ZoneInfo]:
+    expression = settings.mam_hash_lookup_cron.strip()
+    timezone_name = settings.mam_hash_lookup_cron_timezone.strip()
+    if not expression:
+        raise RuntimeError("MAM_HASH_LOOKUP_CRON_ENABLED=true requires MAM_HASH_LOOKUP_CRON to be a non-empty 5-field cron expression")
+    if not _is_valid_cron_expression(expression):
+        raise RuntimeError("MAM_HASH_LOOKUP_CRON must be a valid 5-field cron expression, for example '0 3 * * *'")
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise RuntimeError(f"MAM_HASH_LOOKUP_CRON_TIMEZONE must be a valid IANA timezone, got '{timezone_name}'") from exc
+    return expression, timezone
+
+
+async def run_qbit_mam_sync_with_lock(
+    qbit_client: QbitClient | None = None,
+    mam_client: MamClient | None = None,
+    *,
+    sync_func: Callable[..., Awaitable[dict[str, Any]]] = sync_qbit_mam_hashes,
+    skip_if_running: bool = False,
+    logger: Callable[[str], Any] = print,
+) -> dict[str, Any] | None:
+    if qbit_mam_sync_lock.locked():
+        if skip_if_running:
+            logger("qBit/MAM scheduled sync skipped: another qBit/MAM sync is already running")
+            return None
+        raise QbitMamSyncAlreadyRunning("qBit/MAM sync is already running")
+    async with qbit_mam_sync_lock:
+        return await sync_func(qbit_client=qbit_client, mam_client=mam_client)
+
+
+async def _run_scheduled_qbit_mam_sync_once(
+    qbit_client: QbitClient | None = None,
+    mam_client: MamClient | None = None,
+    *,
+    sync_func: Callable[..., Awaitable[dict[str, Any]]] = sync_qbit_mam_hashes,
+    logger: Callable[[str], Any] = print,
+) -> dict[str, Any] | None:
+    try:
+        logger("qBit/MAM scheduled sync starting")
+        result = await run_qbit_mam_sync_with_lock(
+            qbit_client=qbit_client,
+            mam_client=mam_client,
+            sync_func=sync_func,
+            skip_if_running=True,
+            logger=logger,
+        )
+        if result is not None:
+            logger("qBit/MAM scheduled sync finished")
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger(f"qBit/MAM scheduled sync failed: {exc}")
+        return None
+
+
+async def qbit_mam_sync_scheduler_loop(
+    qbit_client: QbitClient | None = None,
+    mam_client: MamClient | None = None,
+    *,
+    cron_expression: str | None = None,
+    timezone: ZoneInfo | None = None,
+    sleep: Callable[[float], Awaitable[Any]] = asyncio.sleep,
+    now: Callable[[], datetime] | None = None,
+    sync_func: Callable[..., Awaitable[dict[str, Any]]] = sync_qbit_mam_hashes,
+    logger: Callable[[str], Any] = print,
+) -> None:
+    expression = cron_expression or settings.mam_hash_lookup_cron.strip()
+    tz = timezone or ZoneInfo(settings.mam_hash_lookup_cron_timezone.strip())
+    current_time = now or (lambda: datetime.now(tz))
+
+    while True:
+        base = current_time()
+        if base.tzinfo is None:
+            base = base.replace(tzinfo=tz)
+        else:
+            base = base.astimezone(tz)
+        next_run = _next_cron_datetime(expression, base)
+        if next_run.tzinfo is None:
+            next_run = next_run.replace(tzinfo=tz)
+        delay_seconds = max((next_run - base).total_seconds(), 0.0)
+        logger(f"qBit/MAM scheduled sync next run at {next_run.isoformat()}")
+        await sleep(delay_seconds)
+        await _run_scheduled_qbit_mam_sync_once(
+            qbit_client=qbit_client,
+            mam_client=mam_client,
+            sync_func=sync_func,
+            logger=logger,
+        )

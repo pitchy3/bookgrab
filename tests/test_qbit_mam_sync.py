@@ -267,3 +267,155 @@ def test_api_add_blocks_duplicate_by_computed_hash_even_with_stale_cache(monkeyp
 
     assert response.status_code == 409
     assert "Already There" in response.json()["detail"]
+
+
+def test_qbit_mam_cron_disabled_by_default(monkeypatch):
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", False)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_cron_enabled", False)
+    monkeypatch.setattr(main, "_validate_auth_config", lambda: None)
+    monkeypatch.setattr(main, "init_db", lambda: None)
+    monkeypatch.setattr(main.settings, "import_min_completion_ratio_legacy_present", False)
+    monkeypatch.setattr(main.settings, "import_enabled", False)
+    created = []
+
+    def fake_create_task(coro):
+        created.append(coro)
+        coro.close()
+        return object()
+
+    monkeypatch.setattr(main.asyncio, "create_task", fake_create_task)
+
+    asyncio.run(main.startup())
+
+    assert created == []
+    assert main._qbit_mam_sync_task is None
+
+
+def test_invalid_qbit_mam_cron_expression_raises_clear_error(monkeypatch):
+    from app.qbit_mam_sync import validate_qbit_mam_sync_cron_config
+    import pytest
+
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_cron", "bad cron")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_cron_timezone", "UTC")
+
+    with pytest.raises(RuntimeError, match="MAM_HASH_LOOKUP_CRON.*5-field"):
+        validate_qbit_mam_sync_cron_config()
+
+
+def test_invalid_qbit_mam_cron_timezone_raises_clear_error(monkeypatch):
+    from app.qbit_mam_sync import validate_qbit_mam_sync_cron_config
+    import pytest
+
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_cron", "0 3 * * *")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_cron_timezone", "Not/AZone")
+
+    with pytest.raises(RuntimeError, match="MAM_HASH_LOOKUP_CRON_TIMEZONE"):
+        validate_qbit_mam_sync_cron_config()
+
+
+def test_scheduled_sync_skips_when_lock_is_held(monkeypatch):
+    from app.qbit_mam_sync import _run_scheduled_qbit_mam_sync_once, qbit_mam_sync_lock
+
+    calls = []
+    logs = []
+
+    async def forbidden_sync(**_kwargs):
+        calls.append("called")
+        return {"ok": True}
+
+    async def scenario():
+        async with qbit_mam_sync_lock:
+            result = await _run_scheduled_qbit_mam_sync_once(sync_func=forbidden_sync, logger=logs.append)
+        return result
+
+    result = asyncio.run(scenario())
+
+    assert result is None
+    assert calls == []
+    assert any("scheduled sync skipped" in message for message in logs)
+
+
+def test_scheduled_and_manual_paths_share_lock(monkeypatch):
+    from app.qbit_mam_sync import _run_scheduled_qbit_mam_sync_once
+
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_scheduled_sync(**_kwargs):
+        started.set()
+        await release.wait()
+        return {"scheduled": True}
+
+    async def manual_sync(**_kwargs):
+        return {"manual": True}
+
+    monkeypatch.setattr(main, "sync_qbit_mam_hashes", manual_sync)
+
+    async def scenario():
+        scheduled = asyncio.create_task(_run_scheduled_qbit_mam_sync_once(sync_func=slow_scheduled_sync, logger=lambda _msg: None))
+        await started.wait()
+        try:
+            await main.api_qbit_mam_sync_run(object())
+        except Exception as exc:  # noqa: BLE001
+            manual_error = exc
+        else:
+            manual_error = None
+        release.set()
+        scheduled_result = await scheduled
+        return scheduled_result, manual_error
+
+    scheduled_result, manual_error = asyncio.run(scenario())
+
+    assert scheduled_result == {"scheduled": True}
+    assert manual_error is not None
+    assert manual_error.status_code == 409
+
+
+def test_skipped_scheduled_runs_are_not_queued(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.qbit_mam_sync import qbit_mam_sync_scheduler_loop, qbit_mam_sync_lock
+
+    tz = ZoneInfo("UTC")
+    times = [
+        datetime(2026, 6, 4, 0, 0, tzinfo=tz),
+        datetime(2026, 6, 4, 0, 1, tzinfo=tz),
+    ]
+    sleeps = []
+    sync_calls = []
+    logs = []
+
+    def fake_now():
+        return times[min(len(sleeps), len(times) - 1)]
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 1:
+            return
+        raise asyncio.CancelledError
+
+    async def fake_sync(**_kwargs):
+        sync_calls.append("called")
+        return {"ok": True}
+
+    async def scenario():
+        async with qbit_mam_sync_lock:
+            try:
+                await qbit_mam_sync_scheduler_loop(
+                    cron_expression="* * * * *",
+                    timezone=tz,
+                    sleep=fake_sleep,
+                    now=fake_now,
+                    sync_func=fake_sync,
+                    logger=logs.append,
+                )
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(scenario())
+
+    assert sleeps == [60.0, 60.0]
+    assert sync_calls == []
+    assert sum("scheduled sync skipped" in message for message in logs) == 1

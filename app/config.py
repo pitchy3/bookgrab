@@ -17,6 +17,12 @@ class Settings:
     mam_uid: str = os.getenv("MAM_UID", "")
     mam_session: str = os.getenv("MAM_SESSION", "")
     mam_timeout_seconds: int = int(os.getenv("MAM_TIMEOUT_SECONDS", "30"))
+    mam_hash_lookup_enabled: bool = os.getenv("MAM_HASH_LOOKUP_ENABLED", "false").lower() == "true"
+    mam_hash_lookup_delay_seconds: float = max(float(os.getenv("MAM_HASH_LOOKUP_DELAY_SECONDS", "10")), 0.0)
+    mam_hash_lookup_max_per_run: int = max(int(os.getenv("MAM_HASH_LOOKUP_MAX_PER_RUN", "100")), 0)
+    mam_hash_lookup_cache_ttl_days: int = max(int(os.getenv("MAM_HASH_LOOKUP_CACHE_TTL_DAYS", "30")), 1)
+    mam_hash_lookup_retry_error_ttl_hours: int = max(int(os.getenv("MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS", "24")), 1)
+    mam_hash_lookup_no_match_ttl_days: int = max(int(os.getenv("MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS", "30")), 1)
 
     qbit_base_url: str = os.getenv("QBIT_BASE_URL", "http://qbittorrent:8080").rstrip("/")
     qbit_username: str = os.getenv("QBIT_USERNAME", "admin")

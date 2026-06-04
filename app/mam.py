@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -8,6 +9,7 @@ import httpx
 from app.config import settings
 
 MEDIA_TO_MAIN_CAT = {"audiobook": "13", "ebook": "14"}
+INFO_HASH_RE = re.compile(r"^[a-fA-F0-9]{40}$")
 
 
 class MamError(Exception):
@@ -135,6 +137,31 @@ class MamClient:
             raise MamError("Unexpected response from search API")
         filtered = [normalize_result(r) for r in rows if str(r.get("main_cat", "")) == MEDIA_TO_MAIN_CAT[media_type]]
         return filtered
+
+    async def lookup_by_hash(self, info_hash: str) -> dict[str, Any] | None:
+        normalized_hash = str(info_hash or "").strip().lower()
+        if not INFO_HASH_RE.fullmatch(normalized_hash):
+            raise MamError("Invalid torrent info hash")
+        payload = {"tor": {"hash": normalized_hash}, "thumbnail": "true"}
+        url = f"{self.base_url}/tor/js/loadSearchJSONbasic.php"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                resp = await client.post(url, json=payload, headers=self._headers())
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise MamError("Failed to query MAM hash lookup API. Check source auth/session and URL.") from exc
+        data = resp.json()
+        rows = data.get("data") if isinstance(data, dict) else data
+        if rows in (None, ""):
+            return None
+        if not isinstance(rows, list):
+            raise MamError("Unexpected response from MAM hash lookup API")
+        if not rows:
+            return None
+        first = rows[0]
+        if not isinstance(first, dict):
+            raise MamError("Unexpected row from MAM hash lookup API")
+        return normalize_result(first)
 
     async def download_torrent(self, torrent_id: str) -> bytes:
         tid = str(torrent_id).strip()

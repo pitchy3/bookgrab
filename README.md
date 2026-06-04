@@ -13,6 +13,7 @@
 - Downloads `.torrent` files server-side using configured source auth cookies/session values.
 - Uploads torrents to qBittorrent Web API with category/savepath mapping.
 - Writes basic add history to `/config/app.db`.
+- Optionally maps qBittorrent torrent hashes back to MAM ids so search results can show already-loaded torrents.
 
 - Optional library presence checks (Plex and/or Audiobookshelf) for search results (disabled by default).
 
@@ -103,6 +104,38 @@ The search client is implemented to match the documented JSON style from your pr
 - payload shape uses `tor.text`, `tor.srchIn` (array of fields), `tor.searchType`, `tor.sortType`, `tor.startNumber`, and `tor.main_cat`
 - response parsing expects `data` as a list and supports people fields that may arrive as JSON-encoded id:name objects
 
+
+## Optional qBittorrent loaded-torrent detection
+
+BookGrab can optionally mark MAM search results as already loaded in qBittorrent. Normal MAM search rows from `/tor/js/loadSearchJSONbasic.php` do **not** include torrent info hashes, so BookGrab does not try to compare a hidden search-result hash to qBittorrent and does not download `.torrent` files for every result.
+
+Instead, when enabled, BookGrab works in the safer direction:
+
+1. Read the torrents already present in your qBittorrent instance.
+2. Normalize each qBittorrent info hash.
+3. Query MAM's search endpoint with the official `tor.hash` parameter for that one hash.
+4. Cache the resulting qBittorrent hash → MAM torrent id mapping in SQLite.
+5. During `/api/search`, compare returned MAM ids against the local cache and mark exact cached matches as `Loaded` / `In qBit`.
+
+This feature is disabled by default. Enable it only if you want BookGrab to perform background/manual MAM hash lookup API calls:
+
+```env
+MAM_HASH_LOOKUP_ENABLED=false
+MAM_HASH_LOOKUP_DELAY_SECONDS=10
+MAM_HASH_LOOKUP_MAX_PER_RUN=100
+MAM_HASH_LOOKUP_CACHE_TTL_DAYS=30
+MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS=24
+MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS=30
+```
+
+The defaults are intentionally conservative and use one MAM hash lookup about every 10 seconds, with no aggressive parallel lookups. Respect MAM API limits and keep the default rate unless you have a clear reason to change it.
+
+The first sync can take a long time for large qBittorrent instances. For example, 4,400 uncached torrents at 10 seconds per lookup can take roughly 12 hours and 13 minutes if processed in one continuous run. With the default `MAM_HASH_LOOKUP_MAX_PER_RUN=100`, the same initial sync is split over multiple manual runs; each full 100-lookup run may take at least about 16 minutes and 40 seconds. Logs at sync start show how many qBittorrent torrents were discovered, how many are already cached, how many require MAM hash lookups, the configured delay and max-per-run, and the estimated minimum duration. Progress and completion summaries are also logged.
+
+Cached matches and cached no-match results make later syncs much faster because only new or stale hashes are queried. If the sync has not completed yet, searches still work normally; uncached loaded torrents simply will not show the loaded label until their qBittorrent hash has been mapped back to a MAM id.
+
+This feature does not download content files and does not download `.torrent` files for every search result. The only time BookGrab downloads a `.torrent` file for duplicate protection is when you choose a specific result to add; BookGrab then computes that selected torrent's info hash and checks qBittorrent before uploading, which protects against stale cache entries and race conditions.
+
 ## qBittorrent setup
 
 Suggested categories:
@@ -121,13 +154,15 @@ Optionally set save paths with:
 - `GET /api/health`
 - `POST /api/search`
 - `POST /api/add`
+- `POST /api/qbit-mam-sync/run` (manual qBittorrent-to-MAM hash cache sync)
+- `GET /api/qbit-mam-sync/status`
 
 ## Troubleshooting
 
 - **Source auth expired**: refresh source auth cookie/session values and restart container.
 - **qBittorrent login failed**: verify `QBIT_BASE_URL`, username/password, and Web UI API availability.
 - **No results**: confirm query, media type, and active source authentication.
-- **Torrent already exists**: qBittorrent may reject duplicates; this is expected.
+- **Torrent already exists**: BookGrab computes the selected `.torrent` info hash before adding and returns a duplicate error if qBittorrent already has that exact hash.
 - **Category/save path issues**: verify categories exist in qBittorrent and save path is writable.
 
 ## Troubleshooting: sqlite3.OperationalError: unable to open database file
@@ -161,7 +196,7 @@ docker build -t BookGrab:local .
 ## Assumptions
 
 - Configured source search endpoint accepts JSON payload as implemented.
-- Source response includes expected `data` list and download-hash field.
+- Source response includes expected `data` list. Normal search results are not assumed to include info hashes.
 - qBittorrent Web API v2 endpoints are reachable from container.
 
 

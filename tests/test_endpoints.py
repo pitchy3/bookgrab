@@ -57,12 +57,16 @@ def test_api_add_maps_qbit_login_failures_to_502(monkeypatch):
     monkeypatch.setattr(main, "record_download", lambda *args, **kwargs: None)
 
     async def _fake_download_torrent(_torrent_id: str):
-        return b"d8:announce"
+        return b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
 
     async def _fake_add_torrent(*_args, **_kwargs):
         raise QbitError("qBittorrent login failed")
 
+    async def _fake_get_torrent(_hash: str):
+        return None
+
     monkeypatch.setattr(main.mam_client, "download_torrent", _fake_download_torrent)
+    monkeypatch.setattr(main.qbit_client, "get_torrent", _fake_get_torrent)
     monkeypatch.setattr(main.qbit_client, "add_torrent", _fake_add_torrent)
 
     main._search_cache.clear()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -13,11 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import settings
-from app.db import add_history, get_db_path, get_import_status, init_db, record_download
+from app.db import add_history, get_db_path, get_import_status, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download
 from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
 from app.importer import importer_loop, run_import_once
-from app.qbittorrent import QbitClient, QbitError
+from app.qbittorrent import QbitClient, QbitError, _torrent_info_hash
+from app.qbit_mam_sync import sync_qbit_mam_hashes
 from app.library_presence import library_presence_service
 
 app = FastAPI(title="BookGrab")
@@ -29,6 +31,7 @@ qbit_client = QbitClient()
 _search_cache: dict[str, dict[int, dict[str, Any]]] = {}
 _search_cache_updated_at: dict[str, float] = {}
 _importer_task = None
+_qbit_mam_sync_lock = asyncio.Lock()
 _SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
 
 
@@ -203,11 +206,18 @@ async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]
     except MamError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    qbit_matches = {}
+    if settings.mam_hash_lookup_enabled:
+        qbit_matches = get_qbit_mam_matches_by_mam_ids([int(row["id"]) for row in rows])
+
     sanitized = []
     per_id: dict[int, dict[str, Any]] = {}
     for row in rows:
         per_id[row["id"]] = row
-        safe = {k: v for k, v in row.items() if k != "_torrent_id"}
+        safe = {k: v for k, v in row.items() if not k.startswith("_")}
+        qbit_match = qbit_matches.get(int(row["id"]))
+        safe["in_qbit"] = qbit_match is not None
+        safe["qbit_name"] = qbit_match["qbit_name"] if qbit_match is not None else None
         sanitized.append(safe)
     if payload.media_type == "audiobook":
         for safe in sanitized:
@@ -250,10 +260,20 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
             keys = sorted(matched.keys())
             raise MamError(f"Missing source torrent id; available result keys: {keys}")
         torrent_bytes = await mam_client.download_torrent(torrent_id)
+        info_hash = _torrent_info_hash(torrent_bytes)
+        existing = await qbit_client.get_torrent(info_hash)
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Torrent is already loaded in qBittorrent as {existing.get('name') or info_hash}",
+            )
         result = await qbit_client.add_torrent(torrent_bytes, cached_media_type, matched.get("title", "mam"))
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, result.get("category", ""), "success")
         import_status = "queued" if settings.import_enabled else "disabled"
         record_download(mam_id=str(payload.id), title=matched.get("title", ""), author=matched.get("author", ""), narrator=matched.get("narrator", ""), series=matched.get("series", ""), media_type=cached_media_type, qbit_category=result.get("category"), qbit_hash=result.get("hash"), qbit_name=result.get("name"), save_path=result.get("save_path"), content_path=result.get("content_path"), import_status=import_status, last_error=result.get("last_error"))
+    except HTTPException:
+        add_history(str(payload.id), matched.get("title", ""), cached_media_type, "", "failed", "Duplicate already loaded in qBittorrent")
+        raise
     except (MamError, QbitError) as exc:
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, "", "failed", str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -272,3 +292,24 @@ async def api_import_run(request: Request) -> dict[str, Any]:
 async def api_import_status(request: Request) -> dict[str, Any]:
     _require_login(request)
     return get_import_status()
+
+
+@app.post("/api/qbit-mam-sync/run")
+async def api_qbit_mam_sync_run(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    if _qbit_mam_sync_lock.locked():
+        raise HTTPException(status_code=409, detail="qBit/MAM sync is already running")
+    async with _qbit_mam_sync_lock:
+        return await sync_qbit_mam_hashes(qbit_client=qbit_client, mam_client=mam_client)
+
+
+@app.get("/api/qbit-mam-sync/status")
+async def api_qbit_mam_sync_status(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    status = get_qbit_mam_sync_status()
+    return {
+        "enabled": settings.mam_hash_lookup_enabled,
+        "delay_seconds": settings.mam_hash_lookup_delay_seconds,
+        "max_per_run": settings.mam_hash_lookup_max_per_run,
+        **status,
+    }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -30,6 +31,7 @@ qbit_client = QbitClient()
 _search_cache: dict[str, dict[int, dict[str, Any]]] = {}
 _search_cache_updated_at: dict[str, float] = {}
 _importer_task = None
+_qbit_mam_sync_lock = asyncio.Lock()
 _SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
 
 
@@ -204,12 +206,15 @@ async def api_search(payload: SearchRequest, request: Request) -> dict[str, Any]
     except MamError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    qbit_matches = get_qbit_mam_matches_by_mam_ids([int(row["id"]) for row in rows])
+    qbit_matches = {}
+    if settings.mam_hash_lookup_enabled:
+        qbit_matches = get_qbit_mam_matches_by_mam_ids([int(row["id"]) for row in rows])
+
     sanitized = []
     per_id: dict[int, dict[str, Any]] = {}
     for row in rows:
         per_id[row["id"]] = row
-        safe = {k: v for k, v in row.items() if k != "_torrent_id" and k != "_torrent_hash"}
+        safe = {k: v for k, v in row.items() if not k.startswith("_")}
         qbit_match = qbit_matches.get(int(row["id"]))
         safe["in_qbit"] = qbit_match is not None
         safe["qbit_name"] = qbit_match["qbit_name"] if qbit_match is not None else None
@@ -292,7 +297,10 @@ async def api_import_status(request: Request) -> dict[str, Any]:
 @app.post("/api/qbit-mam-sync/run")
 async def api_qbit_mam_sync_run(request: Request) -> dict[str, Any]:
     _require_login(request)
-    return await sync_qbit_mam_hashes(qbit_client=qbit_client, mam_client=mam_client)
+    if _qbit_mam_sync_lock.locked():
+        raise HTTPException(status_code=409, detail="qBit/MAM sync is already running")
+    async with _qbit_mam_sync_lock:
+        return await sync_qbit_mam_hashes(qbit_client=qbit_client, mam_client=mam_client)
 
 
 @app.get("/api/qbit-mam-sync/status")
@@ -303,6 +311,5 @@ async def api_qbit_mam_sync_status(request: Request) -> dict[str, Any]:
         "enabled": settings.mam_hash_lookup_enabled,
         "delay_seconds": settings.mam_hash_lookup_delay_seconds,
         "max_per_run": settings.mam_hash_lookup_max_per_run,
-        "pending_lookup_count": None,
         **status,
     }

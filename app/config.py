@@ -37,7 +37,6 @@ class Settings:
     mam_session: str
     mam_timeout_seconds: int
     mam_hash_lookup_enabled: bool
-    mam_hash_lookup_delay_seconds: float
     mam_hash_lookup_max_per_run: int
     mam_hash_lookup_cache_ttl_days: int
     mam_hash_lookup_retry_error_ttl_hours: int
@@ -98,7 +97,6 @@ class Settings:
         self.mam_session = os.getenv("MAM_SESSION", "")
         self.mam_timeout_seconds = int(os.getenv("MAM_TIMEOUT_SECONDS", "30"))
         self.mam_hash_lookup_enabled = os.getenv("MAM_HASH_LOOKUP_ENABLED", "false").lower() == "true"
-        self.mam_hash_lookup_delay_seconds = max(float(os.getenv("MAM_HASH_LOOKUP_DELAY_SECONDS", "10")), 0.0)
         self.mam_hash_lookup_max_per_run = max(int(os.getenv("MAM_HASH_LOOKUP_MAX_PER_RUN", "100")), 0)
         self.mam_hash_lookup_cache_ttl_days = max(int(os.getenv("MAM_HASH_LOOKUP_CACHE_TTL_DAYS", "30")), 1)
         self.mam_hash_lookup_retry_error_ttl_hours = max(int(os.getenv("MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS", "24")), 1)
@@ -107,7 +105,7 @@ class Settings:
         self.mam_hash_lookup_cron = os.getenv("MAM_HASH_LOOKUP_CRON", "")
         self.mam_hash_lookup_cron_timezone = os.getenv("MAM_HASH_LOOKUP_CRON_TIMEZONE", os.getenv("TZ", "UTC"))
         self.mam_hash_lookup_scope = parse_mam_hash_lookup_scope(os.getenv("MAM_HASH_LOOKUP_SCOPE", "mam_only"))
-        self.mam_tracker_hosts = parse_csv(os.getenv("MAM_TRACKER_HOSTS", "myanonamouse.net,www.myanonamouse.net"), lowercase=True)
+        self.mam_tracker_hosts = parse_csv(os.getenv("MAM_TRACKER_HOSTS", "t.myanonamouse.net,myanonamouse.net,www.myanonamouse.net"), lowercase=True)
 
         self.qbit_base_url = os.getenv("QBIT_BASE_URL", "http://qbittorrent:8080").rstrip("/")
         self.qbit_username = os.getenv("QBIT_USERNAME", "admin")

@@ -25,12 +25,20 @@ def test_mam_hash_lookup_scope_invalid_value_raises_clear_error():
         parse_mam_hash_lookup_scope("everything")
 
 
-def test_mam_tracker_hosts_normalize_lowercase_trim_and_empty(monkeypatch):
-    monkeypatch.setenv("MAM_TRACKER_HOSTS", " MyAnonAMouse.net, ,WWW.MYANONAMOUSE.NET ")
+def test_mam_tracker_hosts_default_includes_actual_tracker_host(monkeypatch):
+    monkeypatch.delenv("MAM_TRACKER_HOSTS", raising=False)
 
     settings = Settings()
 
-    assert settings.mam_tracker_hosts == ["myanonamouse.net", "www.myanonamouse.net"]
+    assert settings.mam_tracker_hosts == ["t.myanonamouse.net", "myanonamouse.net", "www.myanonamouse.net"]
+
+
+def test_mam_tracker_hosts_normalize_lowercase_trim_and_empty(monkeypatch):
+    monkeypatch.setenv("MAM_TRACKER_HOSTS", " T.MyAnonAMouse.net, ,WWW.MYANONAMOUSE.NET ")
+
+    settings = Settings()
+
+    assert settings.mam_tracker_hosts == ["t.myanonamouse.net", "www.myanonamouse.net"]
 
 
 def test_mam_hash_lookup_include_categories_defaults_from_qbit_categories(monkeypatch):

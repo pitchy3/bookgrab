@@ -121,25 +121,25 @@ This feature is disabled by default. Enable it only if you want BookGrab to perf
 
 ```env
 MAM_HASH_LOOKUP_ENABLED=false
-MAM_HASH_LOOKUP_DELAY_SECONDS=10
 MAM_HASH_LOOKUP_MAX_PER_RUN=100
 MAM_HASH_LOOKUP_CACHE_TTL_DAYS=30
 MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS=24
 MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS=30
 MAM_HASH_LOOKUP_SCOPE=mam_only
-MAM_TRACKER_HOSTS=myanonamouse.net,www.myanonamouse.net
-MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=
+MAM_TRACKER_HOSTS=t.myanonamouse.net,myanonamouse.net,www.myanonamouse.net
+# Optional: set explicit qBittorrent categories for category scope.
+# MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=audiobooks,ebooks
 MAM_HASH_LOOKUP_CRON_ENABLED=false
 MAM_HASH_LOOKUP_CRON=0 3 * * *
 MAM_HASH_LOOKUP_CRON_TIMEZONE=UTC
 ```
 
-The defaults are intentionally conservative and use one MAM hash lookup about every 10 seconds, with no aggressive parallel lookups. By default, BookGrab also uses `MAM_HASH_LOOKUP_SCOPE=mam_only`, so it checks only qBittorrent torrents that appear to have a MAM tracker. This avoids wasting MAM API calls on unrelated torrents and makes first syncs much faster. Tracker matching is hostname-based against `MAM_TRACKER_HOSTS` (default `myanonamouse.net,www.myanonamouse.net`). Respect MAM API limits and keep the default rate unless you have a clear reason to change it.
+The defaults are intentionally conservative and use a fixed 10-second delay between MAM hash lookups, with no aggressive parallel lookups. By default, BookGrab also uses `MAM_HASH_LOOKUP_SCOPE=mam_only`, so it checks only qBittorrent torrents that appear to have a MAM tracker. This avoids wasting MAM API calls on unrelated torrents and makes first syncs much faster. Tracker matching is hostname-based against `MAM_TRACKER_HOSTS` (default `t.myanonamouse.net,myanonamouse.net,www.myanonamouse.net`). Respect MAM API limits and keep the fixed rate.
 
 Candidate scope options:
 
 - `MAM_HASH_LOOKUP_SCOPE=mam_only` checks torrents whose qBittorrent tracker list contains a configured MAM tracker hostname. This is the default.
-- `MAM_HASH_LOOKUP_SCOPE=category` checks MAM-tracker torrents plus torrents in `MAM_HASH_LOOKUP_INCLUDE_CATEGORIES`. When unset, that category list defaults to `QBIT_CATEGORY_AUDIOBOOKS` and `QBIT_CATEGORY_EBOOKS`; set it to an empty value to disable category inclusion.
+- `MAM_HASH_LOOKUP_SCOPE=category` checks MAM-tracker torrents plus torrents in `MAM_HASH_LOOKUP_INCLUDE_CATEGORIES`. When unset, that category list defaults to `QBIT_CATEGORY_AUDIOBOOKS` and `QBIT_CATEGORY_EBOOKS`; set it explicitly to an empty value to disable category inclusion.
 - `MAM_HASH_LOOKUP_SCOPE=bookgrab` checks MAM-tracker torrents plus torrents BookGrab knows it added from existing download/import records. It does not rely on qBittorrent category alone.
 - `MAM_HASH_LOOKUP_SCOPE=all` intentionally restores the old broad behavior where every qBittorrent torrent is eligible for MAM hash lookup. This can be very slow for large qBittorrent instances and should be used only when you really want to check everything.
 

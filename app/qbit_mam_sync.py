@@ -29,6 +29,7 @@ INFO_HASH_RE = re.compile(r"^[a-fA-F0-9]{40}$")
 _CRON_FIELD_RANGES = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
 _CRON_DAY_OF_MONTH_VALUES = set(range(1, 32))
 _CRON_DAY_OF_WEEK_VALUES = set(range(0, 7))
+MAM_HASH_LOOKUP_DELAY_SECONDS = 10
 qbit_mam_sync_lock = asyncio.Lock()
 
 
@@ -293,7 +294,7 @@ async def sync_qbit_mam_hashes(
 
     max_per_run = settings.mam_hash_lookup_max_per_run
     run_pending = pending[:max_per_run] if max_per_run else pending
-    delay = settings.mam_hash_lookup_delay_seconds
+    delay = MAM_HASH_LOOKUP_DELAY_SECONDS
     estimated_seconds = len(run_pending) * delay
     max_text = str(max_per_run) if max_per_run else "no limit"
     run_scope = "full initial sync may require multiple runs" if max_per_run and len(pending) > len(run_pending) else "all pending lookups are scheduled for this run"

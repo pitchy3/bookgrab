@@ -23,6 +23,7 @@ from app.qbit_mam_sync import (
     QbitMamSyncAlreadyRunning,
     qbit_mam_sync_scheduler_loop,
     run_qbit_mam_sync_with_lock,
+    MAM_HASH_LOOKUP_DELAY_SECONDS,
     sync_qbit_mam_hashes,
     validate_qbit_mam_sync_cron_config,
 )
@@ -337,7 +338,7 @@ async def api_qbit_mam_sync_status(request: Request) -> dict[str, Any]:
     status = get_qbit_mam_sync_status()
     return {
         "enabled": settings.mam_hash_lookup_enabled,
-        "delay_seconds": settings.mam_hash_lookup_delay_seconds,
+        "delay_seconds": MAM_HASH_LOOKUP_DELAY_SECONDS,
         "max_per_run": settings.mam_hash_lookup_max_per_run,
         "lookup_scope": settings.mam_hash_lookup_scope,
         "tracker_hosts": settings.mam_tracker_hosts,

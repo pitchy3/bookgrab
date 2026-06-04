@@ -113,9 +113,10 @@ def test_qbit_sync_logs_initial_estimate(monkeypatch, tmp_path):
     assert "at least 20s" in first
 
 
-def test_api_search_marks_in_qbit_from_cache_without_hash_lookup(monkeypatch, tmp_path):
+def test_api_search_marks_in_qbit_from_cache_when_hash_lookup_enabled(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
     upsert_qbit_mam_cache(
         qbit_hash=HASH1,
         lookup_status="matched",
@@ -144,6 +145,77 @@ def test_api_search_marks_in_qbit_from_cache_without_hash_lookup(monkeypatch, tm
     assert row["qbit_name"] == "Loaded Copy"
     assert "_torrent_hash" not in row
 
+
+
+def test_api_search_skips_qbit_cache_when_hash_lookup_disabled(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", False)
+
+    async def fake_search(**_kwargs):
+        return [{"id": 110685, "title": "The First Law Trilogy", "_torrent_id": "110685", "_torrent_hash": HASH1}]
+
+    def forbidden_cache_lookup(_mam_ids):
+        raise AssertionError("should not be called")
+
+    monkeypatch.setattr(main.mam_client, "search", fake_search)
+    monkeypatch.setattr(main, "get_qbit_mam_matches_by_mam_ids", forbidden_cache_lookup)
+    from fastapi.testclient import TestClient
+
+    response = TestClient(main.app).post(
+        "/api/search",
+        json={"query": "law", "media_type": "audiobook", "search_in": ["title"], "sort": "seedersDesc"},
+    )
+
+    assert response.status_code == 200
+    row = response.json()["results"][0]
+    assert row["in_qbit"] is False
+    assert row["qbit_name"] is None
+    assert "_torrent_id" not in row
+    assert "_torrent_hash" not in row
+
+
+def test_api_qbit_mam_sync_run_rejects_concurrent_request(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_sync(**_kwargs):
+        started.set()
+        await release.wait()
+        return {"ok": True}
+
+    monkeypatch.setattr(main, "sync_qbit_mam_hashes", slow_sync)
+
+    async def run_requests():
+        first = asyncio.create_task(main.api_qbit_mam_sync_run(object()))
+        await started.wait()
+        try:
+            await main.api_qbit_mam_sync_run(object())
+        except Exception as exc:  # noqa: BLE001
+            second = exc
+        else:
+            second = None
+        release.set()
+        first_result = await first
+        return first_result, second
+
+    first_result, second = asyncio.run(run_requests())
+
+    assert first_result == {"ok": True}
+    assert second is not None
+    assert second.status_code == 409
+    assert second.detail == "qBit/MAM sync is already running"
+
+
+def test_api_qbit_mam_sync_status_omits_pending_lookup_count(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+    from fastapi.testclient import TestClient
+
+    response = TestClient(main.app).get("/api/qbit-mam-sync/status")
+
+    assert response.status_code == 200
+    assert "pending_lookup_count" not in response.json()
 
 def test_qbit_sync_empty_inventory_invalidates_previous_matches(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)

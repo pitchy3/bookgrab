@@ -2,7 +2,7 @@ import asyncio
 
 from app import main
 from app.db import get_conn, get_qbit_mam_matches_by_mam_ids, init_db, upsert_qbit_mam_cache
-from app.qbit_mam_sync import sync_qbit_mam_hashes
+from app.qbit_mam_sync import MAM_HASH_LOOKUP_DELAY_SECONDS, sync_qbit_mam_hashes
 
 HASH1 = "a" * 40
 HASH2 = "b" * 40
@@ -38,7 +38,6 @@ def _setup_db(monkeypatch, tmp_path):
 def test_qbit_sync_stores_matched_mapping(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
-    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_max_per_run", 100)
     mam = FakeMam({HASH1: {"id": 110685, "title": "The First Law Trilogy", "catname": "Audiobooks"}})
 
@@ -55,7 +54,6 @@ def test_qbit_sync_stores_matched_mapping(monkeypatch, tmp_path):
 def test_qbit_sync_caches_no_match(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
-    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
     mam = FakeMam({HASH1: None})
 
     result = asyncio.run(sync_qbit_mam_hashes(FakeQbit([HASH1]), mam, logger=lambda _msg: None))
@@ -69,11 +67,10 @@ def test_qbit_sync_caches_no_match(monkeypatch, tmp_path):
 def test_qbit_sync_respects_max_per_run(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
-    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_max_per_run", 2)
     mam = FakeMam({HASH1: None, HASH2: None, HASH3: None})
 
-    result = asyncio.run(sync_qbit_mam_hashes(FakeQbit([HASH1, HASH2, HASH3]), mam, logger=lambda _msg: None))
+    result = asyncio.run(sync_qbit_mam_hashes(FakeQbit([HASH1, HASH2, HASH3]), mam, sleep=lambda _s: asyncio.sleep(0), logger=lambda _msg: None))
 
     assert result["processed"] == 2
     assert mam.lookups == [HASH1, HASH2]
@@ -82,7 +79,6 @@ def test_qbit_sync_respects_max_per_run(monkeypatch, tmp_path):
 def test_qbit_sync_waits_between_lookups(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
-    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 10)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_max_per_run", 100)
     sleeps = []
 
@@ -93,13 +89,12 @@ def test_qbit_sync_waits_between_lookups(monkeypatch, tmp_path):
 
     asyncio.run(sync_qbit_mam_hashes(FakeQbit([HASH1, HASH2]), mam, sleep=fake_sleep, logger=lambda _msg: None))
 
-    assert sleeps == [10]
+    assert sleeps == [MAM_HASH_LOOKUP_DELAY_SECONDS]
 
 
 def test_qbit_sync_logs_initial_estimate(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
-    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 10)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_max_per_run", 2)
     logs = []
     mam = FakeMam({HASH1: None, HASH2: None, HASH3: None})
@@ -109,7 +104,7 @@ def test_qbit_sync_logs_initial_estimate(monkeypatch, tmp_path):
     first = logs[0]
     assert "3 qBittorrent torrents found" in first
     assert "3 pending MAM hash lookups" in first
-    assert "Using 10s delay and max 2 lookups per run" in first
+    assert "Using fixed 10s delay and max 2 lookups per run" in first
     assert "at least 20s" in first
 
 
@@ -220,7 +215,6 @@ def test_api_qbit_mam_sync_status_omits_pending_lookup_count(monkeypatch, tmp_pa
 def test_qbit_sync_empty_inventory_invalidates_previous_matches(monkeypatch, tmp_path):
     _setup_db(monkeypatch, tmp_path)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
-    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
     upsert_qbit_mam_cache(
         qbit_hash=HASH1,
         lookup_status="matched",

@@ -23,6 +23,9 @@ class Settings:
     mam_hash_lookup_cache_ttl_days: int = max(int(os.getenv("MAM_HASH_LOOKUP_CACHE_TTL_DAYS", "30")), 1)
     mam_hash_lookup_retry_error_ttl_hours: int = max(int(os.getenv("MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS", "24")), 1)
     mam_hash_lookup_no_match_ttl_days: int = max(int(os.getenv("MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS", "30")), 1)
+    mam_hash_lookup_cron_enabled: bool = os.getenv("MAM_HASH_LOOKUP_CRON_ENABLED", "false").lower() == "true"
+    mam_hash_lookup_cron: str = os.getenv("MAM_HASH_LOOKUP_CRON", "")
+    mam_hash_lookup_cron_timezone: str = os.getenv("MAM_HASH_LOOKUP_CRON_TIMEZONE", os.getenv("TZ", "UTC"))
 
     qbit_base_url: str = os.getenv("QBIT_BASE_URL", "http://qbittorrent:8080").rstrip("/")
     qbit_username: str = os.getenv("QBIT_USERNAME", "admin")

@@ -19,7 +19,13 @@ from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
 from app.importer import importer_loop, run_import_once
 from app.qbittorrent import QbitClient, QbitError, _torrent_info_hash
-from app.qbit_mam_sync import sync_qbit_mam_hashes
+from app.qbit_mam_sync import (
+    QbitMamSyncAlreadyRunning,
+    qbit_mam_sync_scheduler_loop,
+    run_qbit_mam_sync_with_lock,
+    sync_qbit_mam_hashes,
+    validate_qbit_mam_sync_cron_config,
+)
 from app.library_presence import library_presence_service
 
 app = FastAPI(title="BookGrab")
@@ -31,7 +37,7 @@ qbit_client = QbitClient()
 _search_cache: dict[str, dict[int, dict[str, Any]]] = {}
 _search_cache_updated_at: dict[str, float] = {}
 _importer_task = None
-_qbit_mam_sync_lock = asyncio.Lock()
+_qbit_mam_sync_task = None
 _SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
 
 
@@ -109,6 +115,7 @@ def _prune_search_cache(now: float | None = None) -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
+    global _importer_task, _qbit_mam_sync_task
     uid = os.getuid()
     gid = os.getgid()
     db_path = get_db_path()
@@ -120,7 +127,6 @@ async def startup() -> None:
     print(f"Running as UID:GID: {uid}:{gid}")
     _validate_auth_config()
 
-    global _importer_task
     try:
         init_db()
     except Exception as exc:
@@ -144,12 +150,28 @@ async def startup() -> None:
     else:
         print("Importer: disabled")
 
+    if settings.mam_hash_lookup_enabled and settings.mam_hash_lookup_cron_enabled:
+        cron_expression, cron_timezone = validate_qbit_mam_sync_cron_config()
+        print(f"qBit/MAM sync scheduler: enabled with cron {cron_expression!r} in timezone {cron_timezone.key}")
+        _qbit_mam_sync_task = asyncio.create_task(
+            qbit_mam_sync_scheduler_loop(
+                qbit_client=qbit_client,
+                mam_client=mam_client,
+                cron_expression=cron_expression,
+                timezone=cron_timezone,
+            )
+        )
+    else:
+        print("qBit/MAM sync scheduler: disabled")
+
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
-    global _importer_task
+    global _importer_task, _qbit_mam_sync_task
     if _importer_task:
         _importer_task.cancel()
+    if _qbit_mam_sync_task:
+        _qbit_mam_sync_task.cancel()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -297,10 +319,16 @@ async def api_import_status(request: Request) -> dict[str, Any]:
 @app.post("/api/qbit-mam-sync/run")
 async def api_qbit_mam_sync_run(request: Request) -> dict[str, Any]:
     _require_login(request)
-    if _qbit_mam_sync_lock.locked():
-        raise HTTPException(status_code=409, detail="qBit/MAM sync is already running")
-    async with _qbit_mam_sync_lock:
-        return await sync_qbit_mam_hashes(qbit_client=qbit_client, mam_client=mam_client)
+    try:
+        result = await run_qbit_mam_sync_with_lock(
+            qbit_client=qbit_client,
+            mam_client=mam_client,
+            sync_func=sync_qbit_mam_hashes,
+        )
+    except QbitMamSyncAlreadyRunning as exc:
+        raise HTTPException(status_code=409, detail="qBit/MAM sync is already running") from exc
+    assert result is not None
+    return result
 
 
 @app.get("/api/qbit-mam-sync/status")

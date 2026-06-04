@@ -339,5 +339,8 @@ async def api_qbit_mam_sync_status(request: Request) -> dict[str, Any]:
         "enabled": settings.mam_hash_lookup_enabled,
         "delay_seconds": settings.mam_hash_lookup_delay_seconds,
         "max_per_run": settings.mam_hash_lookup_max_per_run,
+        "lookup_scope": settings.mam_hash_lookup_scope,
+        "tracker_hosts": settings.mam_tracker_hosts,
+        "include_categories": settings.mam_hash_lookup_include_categories,
         **status,
     }

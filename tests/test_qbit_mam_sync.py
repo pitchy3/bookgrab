@@ -1,7 +1,7 @@
 import asyncio
 
 from app import main
-from app.db import get_conn, get_qbit_mam_matches_by_mam_ids, init_db, upsert_qbit_mam_cache
+from app.db import get_conn, get_qbit_mam_matches_by_mam_ids, init_db, record_download, upsert_qbit_mam_cache
 from app.qbit_mam_sync import sync_qbit_mam_hashes
 
 HASH1 = "a" * 40
@@ -10,11 +10,30 @@ HASH3 = "c" * 40
 
 
 class FakeQbit:
-    def __init__(self, hashes):
+    def __init__(self, hashes, trackers=None, categories=None, top_trackers=None, tracker_errors=None):
         self.hashes = hashes
+        self.trackers = trackers or {}
+        self.categories = categories or {}
+        self.top_trackers = top_trackers or {}
+        self.tracker_errors = set(tracker_errors or [])
+        self.tracker_calls = []
 
     async def get_torrents(self):
-        return [{"hash": h, "name": f"Torrent {h[0]}", "category": "audiobooks"} for h in self.hashes]
+        return [
+            {
+                "hash": h,
+                "name": f"Torrent {h[0]}",
+                "category": self.categories.get(h, "audiobooks"),
+                "tracker": self.top_trackers.get(h),
+            }
+            for h in self.hashes
+        ]
+
+    async def get_torrent_trackers(self, info_hash):
+        self.tracker_calls.append(info_hash)
+        if info_hash in self.tracker_errors:
+            raise RuntimeError("tracker fetch failed")
+        return [{"url": url} for url in self.trackers.get(info_hash, [])]
 
 
 class FakeMam:
@@ -32,6 +51,9 @@ class FakeMam:
 
 def _setup_db(monkeypatch, tmp_path):
     monkeypatch.setattr(main.settings, "database_path", str(tmp_path / "app.db"))
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "all")
+    monkeypatch.setattr(main.settings, "mam_tracker_hosts", ["myanonamouse.net", "www.myanonamouse.net"])
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_include_categories", ["audiobooks", "ebooks"])
     init_db()
 
 
@@ -111,6 +133,111 @@ def test_qbit_sync_logs_initial_estimate(monkeypatch, tmp_path):
     assert "3 pending MAM hash lookups" in first
     assert "Using 10s delay and max 2 lookups per run" in first
     assert "at least 20s" in first
+
+
+def test_qbit_sync_mam_only_includes_torrent_with_mam_tracker(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "mam_only")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    mam = FakeMam({HASH1: None})
+    qbit = FakeQbit([HASH1], trackers={HASH1: ["https://www.myanonamouse.net/announce"]})
+
+    result = asyncio.run(sync_qbit_mam_hashes(qbit, mam, logger=lambda _msg: None))
+
+    assert result["candidate_selection"]["candidates"] == 1
+    assert result["candidate_selection"]["selected_by_tracker"] == 1
+    assert mam.lookups == [HASH1]
+
+
+def test_qbit_sync_mam_only_excludes_non_mam_and_skips_mam_lookup(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "mam_only")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    mam = FakeMam({HASH1: None})
+    qbit = FakeQbit([HASH1], trackers={HASH1: ["https://example.org/announce"]})
+
+    result = asyncio.run(sync_qbit_mam_hashes(qbit, mam, logger=lambda _msg: None))
+
+    assert result["candidate_selection"]["candidates"] == 0
+    assert result["candidate_selection"]["filtered_out"] == 1
+    assert result["pending"] == 0
+    assert mam.lookups == []
+
+
+def test_qbit_sync_category_includes_configured_categories_plus_tracker(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "category")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_include_categories", ["audiobooks"])
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    mam = FakeMam({HASH1: None, HASH2: None})
+    qbit = FakeQbit(
+        [HASH1, HASH2, HASH3],
+        categories={HASH1: "audiobooks", HASH2: "other", HASH3: "other"},
+        trackers={HASH2: ["https://myanonamouse.net/announce"], HASH3: ["https://example.org/announce"]},
+    )
+
+    result = asyncio.run(sync_qbit_mam_hashes(qbit, mam, logger=lambda _msg: None))
+
+    assert result["candidate_selection"]["candidates"] == 2
+    assert result["candidate_selection"]["selected_by_category"] == 1
+    assert result["candidate_selection"]["selected_by_tracker"] == 1
+    assert mam.lookups == [HASH1, HASH2]
+
+
+def test_qbit_sync_bookgrab_includes_provenance_plus_tracker(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "bookgrab")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    record_download(mam_id="1", title="BookGrab", media_type="audiobook", qbit_hash=HASH1)
+    mam = FakeMam({HASH1: None, HASH2: None})
+    qbit = FakeQbit(
+        [HASH1, HASH2, HASH3],
+        trackers={HASH2: ["https://myanonamouse.net/announce"], HASH3: ["https://example.org/announce"]},
+    )
+
+    result = asyncio.run(sync_qbit_mam_hashes(qbit, mam, logger=lambda _msg: None))
+
+    assert result["candidate_selection"]["candidates"] == 2
+    assert result["candidate_selection"]["selected_by_bookgrab"] == 1
+    assert result["candidate_selection"]["selected_by_tracker"] == 1
+    assert mam.lookups == [HASH1, HASH2]
+
+
+def test_qbit_sync_all_includes_every_torrent(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "all")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    mam = FakeMam({HASH1: None, HASH2: None, HASH3: None})
+    qbit = FakeQbit([HASH1, HASH2, HASH3])
+
+    result = asyncio.run(sync_qbit_mam_hashes(qbit, mam, logger=lambda _msg: None))
+
+    assert result["candidate_selection"]["candidates"] == 3
+    assert result["candidate_selection"]["selected_by_all"] == 3
+    assert mam.lookups == [HASH1, HASH2, HASH3]
+    assert qbit.tracker_calls == []
+
+
+def test_qbit_sync_tracker_lookup_failure_does_not_crash(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "mam_only")
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_delay_seconds", 0)
+    logs = []
+    mam = FakeMam({HASH1: None})
+    qbit = FakeQbit([HASH1], tracker_errors={HASH1})
+
+    result = asyncio.run(sync_qbit_mam_hashes(qbit, mam, logger=logs.append))
+
+    assert result["candidate_selection"]["candidates"] == 0
+    assert result["candidate_selection"]["tracker_lookup_errors"] == 1
+    assert mam.lookups == []
+    assert any("failed to fetch trackers" in message for message in logs)
 
 
 def test_api_search_marks_in_qbit_from_cache_when_hash_lookup_enabled(monkeypatch, tmp_path):

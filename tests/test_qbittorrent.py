@@ -67,3 +67,24 @@ def test_torrent_info_hash_wraps_bencode_parse_failures():
     torrent_bytes = b"d4:infod4:name4:Book6:lengthi12345e"
     with pytest.raises(QbitError, match="malformed bencode structure"):
         _torrent_info_hash(torrent_bytes)
+
+
+def test_get_torrent_trackers_uses_qbit_trackers_endpoint(monkeypatch):
+    import app.qbittorrent as qbm
+
+    calls = []
+
+    class TrackerClient(_Client):
+        async def get(self, url, params=None):
+            calls.append((url, params))
+            return _Resp(payload=[{"url": "https://myanonamouse.net/announce"}, {"msg": "Working"}])
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(qbm.httpx, 'AsyncClient', TrackerClient)
+
+    rows = asyncio.run(QbitClient().get_torrent_trackers("a" * 40))
+
+    assert calls == [("http://qbittorrent:8080/api/v2/torrents/trackers", {"hash": "a" * 40})]
+    assert rows == [{"url": "https://myanonamouse.net/announce"}, {"msg": "Working"}]

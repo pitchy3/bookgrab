@@ -98,6 +98,17 @@ def get_download_by_hash(qbit_hash: str) -> sqlite3.Row | None:
         return cur.fetchone()
 
 
+def get_bookgrab_qbit_hashes() -> set[str]:
+    try:
+        with get_conn() as conn:
+            rows = conn.execute("SELECT DISTINCT qbit_hash FROM downloads WHERE qbit_hash IS NOT NULL AND qbit_hash != ''").fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return set()
+        raise
+    return {str(row["qbit_hash"]).strip().lower() for row in rows if row["qbit_hash"]}
+
+
 def update_download_import_state(download_id: int, status: str, last_error: str | None = None, completed: bool = False) -> None:
     now = datetime.now(UTC).isoformat()
     with get_conn() as conn:

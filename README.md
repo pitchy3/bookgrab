@@ -126,18 +126,28 @@ MAM_HASH_LOOKUP_MAX_PER_RUN=100
 MAM_HASH_LOOKUP_CACHE_TTL_DAYS=30
 MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS=24
 MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS=30
+MAM_HASH_LOOKUP_SCOPE=mam_only
+MAM_TRACKER_HOSTS=myanonamouse.net,www.myanonamouse.net
+MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=
 MAM_HASH_LOOKUP_CRON_ENABLED=false
 MAM_HASH_LOOKUP_CRON=0 3 * * *
 MAM_HASH_LOOKUP_CRON_TIMEZONE=UTC
 ```
 
-The defaults are intentionally conservative and use one MAM hash lookup about every 10 seconds, with no aggressive parallel lookups. Respect MAM API limits and keep the default rate unless you have a clear reason to change it.
+The defaults are intentionally conservative and use one MAM hash lookup about every 10 seconds, with no aggressive parallel lookups. By default, BookGrab also uses `MAM_HASH_LOOKUP_SCOPE=mam_only`, so it checks only qBittorrent torrents that appear to have a MAM tracker. This avoids wasting MAM API calls on unrelated torrents and makes first syncs much faster. Tracker matching is hostname-based against `MAM_TRACKER_HOSTS` (default `myanonamouse.net,www.myanonamouse.net`). Respect MAM API limits and keep the default rate unless you have a clear reason to change it.
+
+Candidate scope options:
+
+- `MAM_HASH_LOOKUP_SCOPE=mam_only` checks torrents whose qBittorrent tracker list contains a configured MAM tracker hostname. This is the default.
+- `MAM_HASH_LOOKUP_SCOPE=category` checks MAM-tracker torrents plus torrents in `MAM_HASH_LOOKUP_INCLUDE_CATEGORIES`. When unset, that category list defaults to `QBIT_CATEGORY_AUDIOBOOKS` and `QBIT_CATEGORY_EBOOKS`; set it to an empty value to disable category inclusion.
+- `MAM_HASH_LOOKUP_SCOPE=bookgrab` checks MAM-tracker torrents plus torrents BookGrab knows it added from existing download/import records. It does not rely on qBittorrent category alone.
+- `MAM_HASH_LOOKUP_SCOPE=all` intentionally restores the old broad behavior where every qBittorrent torrent is eligible for MAM hash lookup. This can be very slow for large qBittorrent instances and should be used only when you really want to check everything.
 
 Manual qBittorrent/MAM hash sync still works from the UI and from `POST /api/qbit-mam-sync/run`. Scheduling is opt-in and starts only when both `MAM_HASH_LOOKUP_ENABLED=true` and `MAM_HASH_LOOKUP_CRON_ENABLED=true` are set. `MAM_HASH_LOOKUP_CRON` uses standard 5-field cron syntax; for example, `0 3 * * *` runs nightly at 03:00. `MAM_HASH_LOOKUP_CRON_TIMEZONE` accepts an IANA timezone such as `America/Los_Angeles`; if unset, it defaults to `TZ` when present, otherwise `UTC`. If cron scheduling is enabled with a blank or invalid expression, or with an invalid timezone, BookGrab fails startup with a clear error instead of guessing.
 
 Scheduled runs share the same sync lock as manual runs. If a scheduled occurrence fires while any manual or scheduled sync is already running, BookGrab logs that the scheduled sync was skipped and waits for the next cron occurrence; skipped or missed scheduled runs are not queued. If a scheduled sync is running and you start a manual sync, the manual API still returns HTTP 409.
 
-The first sync can take a long time for large qBittorrent instances. For example, 4,400 uncached torrents at 10 seconds per lookup can take roughly 12 hours and 13 minutes if processed in one continuous run. With the default `MAM_HASH_LOOKUP_MAX_PER_RUN=100`, the same initial sync is split over multiple manual or scheduled runs; each full 100-lookup run may take at least about 16 minutes and 40 seconds. Logs at sync start show how many qBittorrent torrents were discovered, how many are already cached, how many require MAM hash lookups, the configured delay and max-per-run, and the estimated minimum duration. Progress and completion summaries are also logged.
+With the default `mam_only` scope, first syncs usually only look up plausible MAM torrents instead of every torrent in qBittorrent. If you use `MAM_HASH_LOOKUP_SCOPE=all`, the first sync can take a long time for large qBittorrent instances. For example, 4,400 uncached torrents at 10 seconds per lookup can take roughly 12 hours and 13 minutes if processed in one continuous run. With the default `MAM_HASH_LOOKUP_MAX_PER_RUN=100`, the same initial sync is split over multiple manual or scheduled runs; each full 100-lookup run may take at least about 16 minutes and 40 seconds. Logs at sync start show how many qBittorrent torrents were discovered, the selected scope, how many candidates were selected or filtered out, why candidates were selected (tracker, category, BookGrab provenance, or all-mode), how many are already cached, how many require MAM hash lookups, the configured delay and max-per-run, and the estimated minimum duration. Progress and completion summaries are also logged.
 
 Cached matches and cached no-match results make later syncs much faster because only new or stale hashes are queried. If the sync has not completed yet, searches still work normally; uncached loaded torrents simply will not show the loaded label until their qBittorrent hash has been mapped back to a MAM id.
 

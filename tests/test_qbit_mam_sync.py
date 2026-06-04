@@ -269,6 +269,28 @@ def test_api_add_blocks_duplicate_by_computed_hash_even_with_stale_cache(monkeyp
     assert "Already There" in response.json()["detail"]
 
 
+def test_fallback_cron_next_datetime_uses_or_for_restricted_dom_and_dow(monkeypatch):
+    from datetime import UTC, datetime
+
+    import app.qbit_mam_sync as qbit_mam_sync
+
+    monkeypatch.setattr(qbit_mam_sync, "_croniter", None)
+
+    next_run = qbit_mam_sync._next_cron_datetime("0 3 1 * 0", datetime(2026, 6, 2, tzinfo=UTC))
+
+    assert next_run == datetime(2026, 6, 7, 3, tzinfo=UTC)
+
+def test_fallback_cron_next_datetime_still_requires_restricted_dom_when_dow_is_wildcard(monkeypatch):
+    from datetime import UTC, datetime
+
+    import app.qbit_mam_sync as qbit_mam_sync
+
+    monkeypatch.setattr(qbit_mam_sync, "_croniter", None)
+
+    next_run = qbit_mam_sync._next_cron_datetime("0 3 1 * *", datetime(2026, 6, 2, tzinfo=UTC))
+
+    assert next_run == datetime(2026, 7, 1, 3, tzinfo=UTC)
+
 def test_qbit_mam_cron_disabled_by_default(monkeypatch):
     monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", False)
     monkeypatch.setattr(main.settings, "mam_hash_lookup_cron_enabled", False)

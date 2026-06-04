@@ -25,6 +25,8 @@ from app.qbittorrent import QbitClient
 
 INFO_HASH_RE = re.compile(r"^[a-fA-F0-9]{40}$")
 _CRON_FIELD_RANGES = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 6)]
+_CRON_DAY_OF_MONTH_VALUES = set(range(1, 32))
+_CRON_DAY_OF_WEEK_VALUES = set(range(0, 7))
 qbit_mam_sync_lock = asyncio.Lock()
 
 
@@ -71,6 +73,22 @@ def _is_valid_cron_expression(expression: str) -> bool:
     return True
 
 
+def _cron_day_matches(candidate: datetime, day_values: set[int], weekday_values: set[int]) -> bool:
+    dom_is_unrestricted = day_values == _CRON_DAY_OF_MONTH_VALUES
+    dow_is_unrestricted = weekday_values == _CRON_DAY_OF_WEEK_VALUES
+    day_matches = candidate.day in day_values
+    cron_weekday = (candidate.weekday() + 1) % 7
+    weekday_matches = cron_weekday in weekday_values
+
+    if dom_is_unrestricted and dow_is_unrestricted:
+        return True
+    if dom_is_unrestricted:
+        return weekday_matches
+    if dow_is_unrestricted:
+        return day_matches
+    return day_matches or weekday_matches
+
+
 def _next_cron_datetime(expression: str, base: datetime) -> datetime:
     if _croniter is not None:
         return _croniter(expression, base).get_next(datetime)
@@ -81,13 +99,11 @@ def _next_cron_datetime(expression: str, base: datetime) -> datetime:
     candidate = (base + timedelta(minutes=1)).replace(second=0, microsecond=0)
     limit = candidate + timedelta(days=366 * 5)
     while candidate <= limit:
-        cron_weekday = (candidate.weekday() + 1) % 7
         if (
             candidate.minute in minute_values
             and candidate.hour in hour_values
-            and candidate.day in day_values
             and candidate.month in month_values
-            and cron_weekday in weekday_values
+            and _cron_day_matches(candidate, day_values, weekday_values)
         ):
             return candidate
         candidate += timedelta(minutes=1)

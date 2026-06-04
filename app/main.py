@@ -20,6 +20,7 @@ from app.models import AddRequest, SearchRequest
 from app.importer import importer_loop, run_import_once
 from app.qbittorrent import QbitClient, QbitError, _torrent_info_hash
 from app.qbit_mam_sync import (
+    MAM_HASH_LOOKUP_DELAY_SECONDS,
     QbitMamSyncAlreadyRunning,
     qbit_mam_sync_scheduler_loop,
     run_qbit_mam_sync_with_lock,
@@ -337,7 +338,7 @@ async def api_qbit_mam_sync_status(request: Request) -> dict[str, Any]:
     status = get_qbit_mam_sync_status()
     return {
         "enabled": settings.mam_hash_lookup_enabled,
-        "delay_seconds": settings.mam_hash_lookup_delay_seconds,
+        "delay_seconds": MAM_HASH_LOOKUP_DELAY_SECONDS,
         "max_per_run": settings.mam_hash_lookup_max_per_run,
         **status,
     }

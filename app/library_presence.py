@@ -164,11 +164,33 @@ class AudiobookshelfProvider:
 
     async def refresh_index(self) -> list[LibraryBook]:
         headers = {"Authorization": f"Bearer {settings.audiobookshelf_token}"}
+        limit = 100
+        offset = 0
+        items: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
-            resp = await client.get(f"{settings.audiobookshelf_base_url}/api/libraries/{settings.audiobookshelf_library_id}/items", params={"limit": 0})
-            resp.raise_for_status()
-            payload = resp.json()
-            items = payload.get("results") or payload.get("items") or []
+            while True:
+                resp = await client.get(
+                    f"{settings.audiobookshelf_base_url}/api/libraries/{settings.audiobookshelf_library_id}/items",
+                    params={"limit": limit, "offset": offset},
+                )
+                resp.raise_for_status()
+                payload = resp.json()
+                page_items = payload.get("results") or payload.get("items") or []
+                if not isinstance(page_items, list):
+                    page_items = []
+                items.extend(page_items)
+
+                total = payload.get("total") or payload.get("count")
+                if not isinstance(total, int) or total <= 0 or not page_items:
+                    break
+
+                response_offset = payload.get("offset")
+                if not isinstance(response_offset, int):
+                    response_offset = offset
+                offset = response_offset + len(page_items)
+                if offset >= total:
+                    break
+
             books: list[LibraryBook] = []
             for item in items:
                 md = ((item or {}).get("media") or {}).get("metadata") or {}

@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import settings
+from app.config import MAM_HASH_LOOKUP_SCOPES, settings
 from app.db import add_history, get_db_path, get_import_status, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download
 from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
@@ -63,6 +63,12 @@ def _is_https_request(request: Request) -> bool:
         return True
     forwarded_proto = request.headers.get("x-forwarded-proto", "")
     return forwarded_proto.split(",", 1)[0].strip().lower() == "https"
+
+
+def _validate_mam_hash_lookup_config() -> None:
+    if settings.mam_hash_lookup_scope not in MAM_HASH_LOOKUP_SCOPES:
+        allowed = ", ".join(sorted(MAM_HASH_LOOKUP_SCOPES))
+        raise RuntimeError(f"MAM_HASH_LOOKUP_SCOPE must be one of: {allowed}; got '{settings.mam_hash_lookup_scope}'")
 
 
 def _validate_import_config() -> None:
@@ -127,6 +133,7 @@ async def startup() -> None:
     print(f"Database path: {db_path}")
     print(f"Running as UID:GID: {uid}:{gid}")
     _validate_auth_config()
+    _validate_mam_hash_lookup_config()
 
     try:
         init_db()
@@ -340,5 +347,8 @@ async def api_qbit_mam_sync_status(request: Request) -> dict[str, Any]:
         "enabled": settings.mam_hash_lookup_enabled,
         "delay_seconds": MAM_HASH_LOOKUP_DELAY_SECONDS,
         "max_per_run": settings.mam_hash_lookup_max_per_run,
+        "scope": settings.mam_hash_lookup_scope,
+        "tracker_hosts": settings.mam_tracker_hosts,
+        "include_categories": settings.mam_hash_lookup_include_categories,
         **status,
     }

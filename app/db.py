@@ -251,3 +251,13 @@ def get_qbit_mam_sync_status() -> dict[str, Any]:
         last_sync = None
         last_errors = 0
     return {"cached_mappings_count": total, "counts": counts, "last_sync_time": last_sync, "last_error_count": last_errors}
+
+def get_bookgrab_qbit_hashes() -> set[str]:
+    try:
+        with get_conn() as conn:
+            rows = conn.execute("SELECT qbit_hash FROM downloads WHERE qbit_hash IS NOT NULL AND TRIM(qbit_hash) != ''").fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table" in str(exc):
+            return set()
+        raise
+    return {str(row["qbit_hash"]).strip().lower() for row in rows if row["qbit_hash"]}

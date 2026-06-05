@@ -125,12 +125,25 @@ MAM_HASH_LOOKUP_MAX_PER_RUN=100
 MAM_HASH_LOOKUP_CACHE_TTL_DAYS=30
 MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS=24
 MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS=30
+MAM_HASH_LOOKUP_SCOPE=mam_only
+MAM_TRACKER_HOSTS=myanonamouse.net,www.myanonamouse.net,t.myanonamouse.net
+# Optional. If unset, category mode defaults to QBIT_CATEGORY_AUDIOBOOKS and QBIT_CATEGORY_EBOOKS.
+# Set to an empty value only if you intentionally want no category-based inclusion.
+# MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=
 MAM_HASH_LOOKUP_CRON_ENABLED=false
 MAM_HASH_LOOKUP_CRON=0 3 * * *
 MAM_HASH_LOOKUP_CRON_TIMEZONE=UTC
 ```
 
 BookGrab always waits 10 seconds between MAM hash lookups to comply with the site rule of no faster than one item per 10 seconds. This delay is fixed and is not configurable.
+
+By default, `MAM_HASH_LOOKUP_SCOPE=mam_only`, so the sync only checks qBittorrent torrents that appear to have MAM trackers. BookGrab matches tracker hostnames from `MAM_TRACKER_HOSTS` (default `myanonamouse.net,www.myanonamouse.net,t.myanonamouse.net`) and uses qBittorrent's per-torrent tracker list when the top-level tracker field is blank or does not prove a MAM tracker. This avoids wasting MAM API calls on unrelated torrents and makes first syncs much faster.
+
+Advanced scope options are available:
+
+- `MAM_HASH_LOOKUP_SCOPE=category` checks torrents in `MAM_HASH_LOOKUP_INCLUDE_CATEGORIES` plus torrents with MAM trackers. If `MAM_HASH_LOOKUP_INCLUDE_CATEGORIES` is unset, it defaults to your configured `QBIT_CATEGORY_AUDIOBOOKS` and `QBIT_CATEGORY_EBOOKS`; set it to an empty string to disable category-based inclusion. This is useful when you organize qBittorrent categories consistently.
+- `MAM_HASH_LOOKUP_SCOPE=bookgrab` checks torrents BookGrab knows it added, plus torrents with MAM trackers. This mode does not rely on qBittorrent category alone.
+- `MAM_HASH_LOOKUP_SCOPE=all` intentionally restores the old broad behavior where every qBittorrent torrent is eligible for MAM hash lookup. This can be very slow for large qBittorrent instances and can consume many MAM API calls, so use it only when you really want that behavior.
 
 Manual qBittorrent/MAM hash sync still works from the UI and from `POST /api/qbit-mam-sync/run`. Scheduling is opt-in and starts only when both `MAM_HASH_LOOKUP_ENABLED=true` and `MAM_HASH_LOOKUP_CRON_ENABLED=true` are set. `MAM_HASH_LOOKUP_CRON` uses standard 5-field cron syntax; for example, `0 3 * * *` runs nightly at 03:00. `MAM_HASH_LOOKUP_CRON_TIMEZONE` accepts an IANA timezone such as `America/Los_Angeles`; if unset, it defaults to `TZ` when present, otherwise `UTC`. If cron scheduling is enabled with a blank or invalid expression, or with an invalid timezone, BookGrab fails startup with a clear error instead of guessing.
 

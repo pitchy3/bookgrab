@@ -74,14 +74,37 @@ function buildLibraryMatchDetails(matches) {
   }).filter(Boolean);
 }
 
-function buildLibraryTooltip(matches) {
-  return buildLibraryMatchDetails(matches).join('\n');
-}
 
 function getLibraryProviders(matches) {
   return [...new Set((matches || [])
     .map(match => abbreviateProvider((match.provider || '').trim()))
     .filter(Boolean))];
+}
+
+
+function buildPresenceLabel(result) {
+  const parts = [];
+  if (result.in_qbit === true) {
+    parts.push('qbit');
+  }
+  parts.push(...getLibraryProviders(result.library_matches || []));
+
+  if (parts.length > 0) {
+    return `in ${parts.join(' + ')}`;
+  }
+  if (result.in_library === true) {
+    return 'in library';
+  }
+  return '';
+}
+
+function buildPresenceTooltip(result, label) {
+  const details = [];
+  if (result.in_qbit === true) {
+    details.push(result.qbit_name ? `qBittorrent: ${result.qbit_name}` : 'qBittorrent');
+  }
+  details.push(...buildLibraryMatchDetails(result.library_matches || []));
+  return details.length ? details.join('\n') : label;
 }
 
 function confirmLibraryGrab(result) {
@@ -256,26 +279,15 @@ function renderResults(results){
     }
     actionTd.appendChild(button);
 
-    if (r.in_qbit === true) {
-      const loaded = document.createElement('div');
-      loaded.className = 'qbit-loaded-label';
-      loaded.setAttribute('role', 'status');
-      loaded.textContent = r.qbit_name ? `In qBit: ${r.qbit_name}` : 'In qBit';
-      actionTd.appendChild(loaded);
-    }
-
-    if (r.in_library === true) {
-      const providers = getLibraryProviders(r.library_matches || []);
-      const label = providers.length ? `In ${providers.join(' + ')}` : 'In library';
-      const detailTooltip = buildLibraryTooltip(r.library_matches || []);
-
-      const warning = document.createElement('div');
-      warning.className = 'library-warning-label';
-      warning.setAttribute('role', 'status');
-      warning.setAttribute('aria-label', label);
-      warning.title = detailTooltip || label;
-      warning.textContent = label;
-      actionTd.appendChild(warning);
+    const presenceLabel = buildPresenceLabel(r);
+    if (presenceLabel) {
+      const presence = document.createElement('div');
+      presence.className = 'qbit-loaded-label';
+      presence.setAttribute('role', 'status');
+      presence.setAttribute('aria-label', presenceLabel);
+      presence.title = buildPresenceTooltip(r, presenceLabel);
+      presence.textContent = presenceLabel;
+      actionTd.appendChild(presence);
     }
 
     tr.append(titleTd, detailsTd, statusTd, actionTd);

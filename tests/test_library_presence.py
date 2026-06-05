@@ -77,6 +77,107 @@ def test_audiobookshelf_refresh_supports_multiple_people_shapes(monkeypatch):
     assert books[1] == LibraryBook(title='Book Two', authors='Andy Weir', narrators='Ray Porter')
 
 
+def test_audiobookshelf_refresh_fetches_paginated_items(monkeypatch):
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_enabled', True)
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_base_url', 'http://abs.local')
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_token', 'token')
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_library_id', 'lib1')
+
+    requests: list[dict] = []
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *args, **kwargs):
+            params = kwargs['params']
+            requests.append(params)
+            if params['page'] == 0:
+                return _Resp({
+                    'results': [
+                        {'media': {'metadata': {'title': 'Book One', 'authorName': 'Author A', 'narratorName': 'Narrator A'}}},
+                        {'media': {'metadata': {'title': 'Book Two', 'authorName': 'Author B', 'narratorName': 'Narrator B'}}},
+                    ],
+                    'total': 3,
+                    'page': 0,
+                })
+            return _Resp({
+                'items': [
+                    {'media': {'metadata': {'title': 'Book Three', 'authors': [{'name': 'Author C'}], 'narrators': ['Narrator C']}}},
+                ],
+                'total': 3,
+                'page': 1,
+            })
+
+    monkeypatch.setattr(library_presence.httpx, 'AsyncClient', lambda *args, **kwargs: _Client())
+
+    provider = library_presence.AudiobookshelfProvider()
+    books = asyncio.run(provider.refresh_index())
+
+    assert requests == [{'limit': 100, 'page': 0}, {'limit': 100, 'page': 1}]
+    assert books == [
+        LibraryBook(title='Book One', authors='Author A', narrators='Narrator A'),
+        LibraryBook(title='Book Two', authors='Author B', narrators='Narrator B'),
+        LibraryBook(title='Book Three', authors='Author C', narrators='Narrator C'),
+    ]
+
+
+def test_audiobookshelf_refresh_uses_positive_limit(monkeypatch):
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_enabled', True)
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_base_url', 'http://abs.local')
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_token', 'token')
+    monkeypatch.setattr(library_presence.settings, 'audiobookshelf_library_id', 'lib1')
+
+    requests: list[dict] = []
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *args, **kwargs):
+            params = kwargs['params']
+            requests.append(params)
+            if params['limit'] == 0:
+                return _Resp({'results': []})
+            return _Resp({'results': [
+                {'media': {'metadata': {'title': 'Positive Limit Book', 'authorName': 'Author', 'narratorName': 'Narrator'}}},
+            ]})
+
+    monkeypatch.setattr(library_presence.httpx, 'AsyncClient', lambda *args, **kwargs: _Client())
+
+    provider = library_presence.AudiobookshelfProvider()
+    books = asyncio.run(provider.refresh_index())
+
+    assert requests == [{'limit': 100, 'page': 0}]
+    assert books == [LibraryBook(title='Positive Limit Book', authors='Author', narrators='Narrator')]
+
+
 def test_audiobookshelf_strict_match_with_narrator_required(monkeypatch):
     monkeypatch.setattr(library_presence.settings, 'library_presence_require_narrator', True)
     provider = library_presence.AudiobookshelfProvider()

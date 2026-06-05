@@ -25,6 +25,14 @@ def test_invalid_hash_lookup_scope_raises_clear_error():
         parse_mam_hash_lookup_scope("everything")
 
 
+def test_default_tracker_hosts_include_mam_announce_host(monkeypatch):
+    monkeypatch.delenv("MAM_TRACKER_HOSTS", raising=False)
+
+    settings = Settings()
+
+    assert "t.myanonamouse.net" in settings.mam_tracker_hosts
+
+
 def test_tracker_host_list_normalizes(monkeypatch):
     monkeypatch.setenv("MAM_TRACKER_HOSTS", " MyAnonAMouse.net, www.MYANONAMOUSE.net ,, tracker.example ")
 

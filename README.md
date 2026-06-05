@@ -126,7 +126,7 @@ MAM_HASH_LOOKUP_CACHE_TTL_DAYS=30
 MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS=24
 MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS=30
 MAM_HASH_LOOKUP_SCOPE=mam_only
-MAM_TRACKER_HOSTS=myanonamouse.net,www.myanonamouse.net
+MAM_TRACKER_HOSTS=myanonamouse.net,www.myanonamouse.net,t.myanonamouse.net
 MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=
 MAM_HASH_LOOKUP_CRON_ENABLED=false
 MAM_HASH_LOOKUP_CRON=0 3 * * *
@@ -135,7 +135,7 @@ MAM_HASH_LOOKUP_CRON_TIMEZONE=UTC
 
 BookGrab always waits 10 seconds between MAM hash lookups to comply with the site rule of no faster than one item per 10 seconds. This delay is fixed and is not configurable.
 
-By default, `MAM_HASH_LOOKUP_SCOPE=mam_only`, so the sync only checks qBittorrent torrents that appear to have MAM trackers. BookGrab matches tracker hostnames from `MAM_TRACKER_HOSTS` (default `myanonamouse.net,www.myanonamouse.net`) and uses qBittorrent's per-torrent tracker list when the top-level tracker field is blank or does not prove a MAM tracker. This avoids wasting MAM API calls on unrelated torrents and makes first syncs much faster.
+By default, `MAM_HASH_LOOKUP_SCOPE=mam_only`, so the sync only checks qBittorrent torrents that appear to have MAM trackers. BookGrab matches tracker hostnames from `MAM_TRACKER_HOSTS` (default `myanonamouse.net,www.myanonamouse.net,t.myanonamouse.net`) and uses qBittorrent's per-torrent tracker list when the top-level tracker field is blank or does not prove a MAM tracker. This avoids wasting MAM API calls on unrelated torrents and makes first syncs much faster.
 
 Advanced scope options are available:
 

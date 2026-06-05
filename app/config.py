@@ -104,7 +104,7 @@ class Settings:
     def __post_init__(self) -> None:
         self.mam_hash_lookup_scope = parse_mam_hash_lookup_scope(os.getenv("MAM_HASH_LOOKUP_SCOPE", "mam_only"))
         self.mam_tracker_hosts = parse_csv_list(
-            os.getenv("MAM_TRACKER_HOSTS", "myanonamouse.net,www.myanonamouse.net"),
+            os.getenv("MAM_TRACKER_HOSTS", "myanonamouse.net,www.myanonamouse.net,t.myanonamouse.net"),
             lowercase=True,
         )
         if "MAM_HASH_LOOKUP_INCLUDE_CATEGORIES" in os.environ:

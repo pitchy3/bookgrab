@@ -105,21 +105,21 @@ def test_audiobookshelf_refresh_fetches_paginated_items(monkeypatch):
         async def get(self, *args, **kwargs):
             params = kwargs['params']
             requests.append(params)
-            if params['offset'] == 0:
+            if params['page'] == 0:
                 return _Resp({
                     'results': [
                         {'media': {'metadata': {'title': 'Book One', 'authorName': 'Author A', 'narratorName': 'Narrator A'}}},
                         {'media': {'metadata': {'title': 'Book Two', 'authorName': 'Author B', 'narratorName': 'Narrator B'}}},
                     ],
                     'total': 3,
-                    'offset': 0,
+                    'page': 0,
                 })
             return _Resp({
                 'items': [
                     {'media': {'metadata': {'title': 'Book Three', 'authors': [{'name': 'Author C'}], 'narrators': ['Narrator C']}}},
                 ],
                 'total': 3,
-                'offset': 2,
+                'page': 1,
             })
 
     monkeypatch.setattr(library_presence.httpx, 'AsyncClient', lambda *args, **kwargs: _Client())
@@ -127,7 +127,7 @@ def test_audiobookshelf_refresh_fetches_paginated_items(monkeypatch):
     provider = library_presence.AudiobookshelfProvider()
     books = asyncio.run(provider.refresh_index())
 
-    assert requests == [{'limit': 100, 'offset': 0}, {'limit': 100, 'offset': 2}]
+    assert requests == [{'limit': 100, 'page': 0}, {'limit': 100, 'page': 1}]
     assert books == [
         LibraryBook(title='Book One', authors='Author A', narrators='Narrator A'),
         LibraryBook(title='Book Two', authors='Author B', narrators='Narrator B'),
@@ -174,7 +174,7 @@ def test_audiobookshelf_refresh_uses_positive_limit(monkeypatch):
     provider = library_presence.AudiobookshelfProvider()
     books = asyncio.run(provider.refresh_index())
 
-    assert requests == [{'limit': 100, 'offset': 0}]
+    assert requests == [{'limit': 100, 'page': 0}]
     assert books == [LibraryBook(title='Positive Limit Book', authors='Author', narrators='Narrator')]
 
 

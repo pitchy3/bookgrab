@@ -165,13 +165,13 @@ class AudiobookshelfProvider:
     async def refresh_index(self) -> list[LibraryBook]:
         headers = {"Authorization": f"Bearer {settings.audiobookshelf_token}"}
         limit = 100
-        offset = 0
+        page = 0
         items: list[dict[str, Any]] = []
         async with httpx.AsyncClient(timeout=20.0, headers=headers) as client:
             while True:
                 resp = await client.get(
                     f"{settings.audiobookshelf_base_url}/api/libraries/{settings.audiobookshelf_library_id}/items",
-                    params={"limit": limit, "offset": offset},
+                    params={"limit": limit, "page": page},
                 )
                 resp.raise_for_status()
                 payload = resp.json()
@@ -184,11 +184,11 @@ class AudiobookshelfProvider:
                 if not isinstance(total, int) or total <= 0 or not page_items:
                     break
 
-                response_offset = payload.get("offset")
-                if not isinstance(response_offset, int):
-                    response_offset = offset
-                offset = response_offset + len(page_items)
-                if offset >= total:
+                response_page = payload.get("page")
+                if not isinstance(response_page, int):
+                    response_page = page
+                page = response_page + 1
+                if len(items) >= total:
                     break
 
             books: list[LibraryBook] = []

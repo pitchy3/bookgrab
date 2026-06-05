@@ -127,7 +127,9 @@ MAM_HASH_LOOKUP_RETRY_ERROR_TTL_HOURS=24
 MAM_HASH_LOOKUP_NO_MATCH_TTL_DAYS=30
 MAM_HASH_LOOKUP_SCOPE=mam_only
 MAM_TRACKER_HOSTS=myanonamouse.net,www.myanonamouse.net,t.myanonamouse.net
-MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=
+# Optional. If unset, category mode defaults to QBIT_CATEGORY_AUDIOBOOKS and QBIT_CATEGORY_EBOOKS.
+# Set to an empty value only if you intentionally want no category-based inclusion.
+# MAM_HASH_LOOKUP_INCLUDE_CATEGORIES=
 MAM_HASH_LOOKUP_CRON_ENABLED=false
 MAM_HASH_LOOKUP_CRON=0 3 * * *
 MAM_HASH_LOOKUP_CRON_TIMEZONE=UTC

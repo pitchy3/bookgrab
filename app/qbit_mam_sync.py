@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import re
+from urllib.parse import urlparse
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -14,6 +15,7 @@ else:
 
 from app.config import settings
 from app.db import (
+    get_bookgrab_qbit_hashes,
     get_qbit_mam_cache_by_hash,
     get_qbit_mam_sync_status,
     mark_qbit_mam_inventory_seen,
@@ -150,6 +152,87 @@ def _is_due(row: Any, now: datetime) -> bool:
     return now - looked_up_at >= timedelta(days=settings.mam_hash_lookup_cache_ttl_days)
 
 
+def _hostname_from_tracker_url(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    parsed = urlparse(text)
+    if not parsed.scheme or not parsed.hostname:
+        return None
+    return parsed.hostname.lower()
+
+
+def _tracker_row_url(row: Any) -> Any:
+    if isinstance(row, dict):
+        return row.get("url")
+    return row
+
+
+def _tracker_url_matches_mam(value: Any, tracker_hosts: set[str]) -> bool:
+    hostname = _hostname_from_tracker_url(value)
+    return hostname in tracker_hosts if hostname else False
+
+
+async def _torrent_has_mam_tracker(
+    qbit_hash: str,
+    torrent: dict[str, Any],
+    qbit_client: QbitClient,
+    tracker_hosts: set[str],
+    logger: Callable[[str], Any],
+) -> bool:
+    if _tracker_url_matches_mam(torrent.get("tracker"), tracker_hosts):
+        return True
+    try:
+        tracker_rows = await qbit_client.get_torrent_trackers(qbit_hash)
+    except Exception as exc:  # noqa: BLE001
+        logger(f"qBit/MAM sync warning: failed to fetch tracker list for {qbit_hash}: {exc}")
+        return False
+    return any(_tracker_url_matches_mam(_tracker_row_url(row), tracker_hosts) for row in tracker_rows)
+
+
+async def select_mam_hash_lookup_candidates(
+    qbit_by_hash: dict[str, dict[str, Any]],
+    qbit_client: QbitClient,
+    logger: Callable[[str], Any] = print,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    scope = settings.mam_hash_lookup_scope
+    tracker_hosts = {host.strip().lower() for host in settings.mam_tracker_hosts if host.strip()}
+    include_categories = {category.strip().lower() for category in settings.mam_hash_lookup_include_categories if category.strip()}
+    bookgrab_hashes = get_bookgrab_qbit_hashes() if scope == "bookgrab" else set()
+
+    candidates: dict[str, dict[str, Any]] = {}
+    reason_counts = {"tracker": 0, "category": 0, "bookgrab": 0, "all": 0}
+
+    if scope == "all":
+        candidates = dict(qbit_by_hash)
+        reason_counts["all"] = len(candidates)
+    else:
+        for qbit_hash, torrent in qbit_by_hash.items():
+            reasons: set[str] = set()
+            if tracker_hosts and await _torrent_has_mam_tracker(qbit_hash, torrent, qbit_client, tracker_hosts, logger):
+                reasons.add("tracker")
+            if scope == "category" and str(torrent.get("category") or "").strip().lower() in include_categories:
+                reasons.add("category")
+            if scope == "bookgrab" and qbit_hash in bookgrab_hashes:
+                reasons.add("bookgrab")
+            if reasons:
+                candidates[qbit_hash] = torrent
+                for reason in reasons:
+                    reason_counts[reason] += 1
+
+    summary = {
+        "scope": scope,
+        "total_discovered": len(qbit_by_hash),
+        "selected_candidates": len(candidates),
+        "filtered_out": max(len(qbit_by_hash) - len(candidates), 0),
+        "selected_by_tracker": reason_counts["tracker"],
+        "selected_by_category": reason_counts["category"],
+        "selected_by_bookgrab": reason_counts["bookgrab"],
+        "selected_by_all": reason_counts["all"],
+    }
+    return candidates, summary
+
+
 def format_duration(seconds: float) -> str:
     total = max(int(seconds), 0)
     hours, remainder = divmod(total, 3600)
@@ -184,12 +267,17 @@ async def sync_qbit_mam_hashes(
         if qbit_hash:
             qbit_by_hash[qbit_hash] = torrent
 
-    pending: list[tuple[str, dict[str, Any]]] = []
-    cached_count = 0
+    candidates, selection_summary = await select_mam_hash_lookup_candidates(qbit_by_hash, qbit_client, logger)
+
     for qbit_hash, torrent in qbit_by_hash.items():
         row = get_qbit_mam_cache_by_hash(qbit_hash)
         if row is not None:
             mark_qbit_mam_seen(qbit_hash, torrent.get("name"), torrent.get("category"), now_iso)
+
+    pending: list[tuple[str, dict[str, Any]]] = []
+    cached_count = 0
+    for qbit_hash, torrent in candidates.items():
+        row = get_qbit_mam_cache_by_hash(qbit_hash)
         if _is_due(row, now):
             pending.append((qbit_hash, torrent))
         else:
@@ -204,8 +292,12 @@ async def sync_qbit_mam_hashes(
     max_text = str(max_per_run) if max_per_run else "no limit"
     run_scope = "full initial sync may require multiple runs" if max_per_run and len(pending) > len(run_pending) else "all pending lookups are scheduled for this run"
     logger(
-        f"qBit/MAM sync: {len(qbit_by_hash)} qBittorrent torrents found, {cached_count} cached, "
-        f"{len(pending)} pending MAM hash lookups. Using fixed {delay:g}s delay and max {max_text} lookups per run. "
+        f"qBit/MAM sync: {len(qbit_by_hash)} qBittorrent torrents found, scope={selection_summary['scope']}, "
+        f"{selection_summary['selected_candidates']} candidates selected, {selection_summary['filtered_out']} filtered out "
+        f"(tracker={selection_summary['selected_by_tracker']}, category={selection_summary['selected_by_category']}, "
+        f"bookgrab={selection_summary['selected_by_bookgrab']}, all={selection_summary['selected_by_all']}), "
+        f"{cached_count} cached, {len(pending)} pending MAM hash lookups. "
+        f"Using fixed {delay:g}s delay and max {max_text} lookups per run. "
         f"This run may take at least {format_duration(estimated_seconds)}; {run_scope}."
     )
     if not max_per_run and pending:
@@ -272,6 +364,9 @@ async def sync_qbit_mam_hashes(
         "enabled": True,
         **status,
         "qbit_torrents_found": len(qbit_by_hash),
+        "candidate_selection": selection_summary,
+        "candidates": selection_summary["selected_candidates"],
+        "filtered_out": selection_summary["filtered_out"],
         "cached": cached_count,
         "pending": len(pending),
         "processed": processed,

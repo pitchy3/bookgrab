@@ -31,3 +31,10 @@ def test_validate_import_config_requires_at_least_one_library(monkeypatch):
 
     with pytest.raises(RuntimeError, match="At least one"):
         main._validate_import_config()
+
+
+def test_validate_hash_lookup_scope_rejects_invalid_scope(monkeypatch):
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_scope", "everything")
+
+    with pytest.raises(RuntimeError, match="MAM_HASH_LOOKUP_SCOPE"):
+        main._validate_mam_hash_lookup_config()

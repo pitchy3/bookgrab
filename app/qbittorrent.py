@@ -26,6 +26,7 @@ class QbitClient:
     def _normalize(self, t: dict) -> dict:
         return {
             "hash": t.get("hash"), "name": t.get("name"), "category": t.get("category"), "save_path": t.get("save_path"), "content_path": t.get("content_path"),
+            "tracker": t.get("tracker"),
             "progress": float(t.get("progress", 0.0) or 0.0), "state": t.get("state"), "completion_on": t.get("completion_on"), "amount_left": int(t.get("amount_left", 0) or 0), "size": int(t.get("size", 0) or 0),
         }
 
@@ -51,6 +52,20 @@ class QbitClient:
             if not js:
                 return None
             return self._normalize(js[0])
+
+    async def get_torrent_trackers(self, hash: str, client: httpx.AsyncClient | None = None) -> list[dict]:
+        own = client is None
+        client = client or httpx.AsyncClient(timeout=self.timeout)
+        try:
+            if own:
+                await self._login(client)
+            resp = await client.get(f"{self.base_url}/api/v2/torrents/trackers", params={"hash": hash})
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else []
+        finally:
+            if own:
+                await client.aclose()
 
     async def add_torrent(self, torrent_bytes: bytes, media_type: str, name: str) -> dict:
         expected_hash = _torrent_info_hash(torrent_bytes)

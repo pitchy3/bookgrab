@@ -252,20 +252,14 @@ class MamClient:
         if not settings.mam_dynamic_seedbox_enabled or not settings.mam_dynamic_seedbox_run_before_search:
             return
         result = await self.refresh_dynamic_seedbox_ip(force=False)
-        if result.get("skipped") or result.get("cooldown") or result.get("ok"):
-            return
         if result.get("auth_config_error"):
             raise MamError(f"MAM dynamic seedbox refresh failed: {result.get('message')}")
+        if result.get("skipped") or result.get("cooldown") or result.get("ok"):
+            return
 
     async def refresh_dynamic_seedbox_ip(self, force: bool = False) -> dict[str, Any]:
         state = load_dynamic_seedbox_state()
         now = datetime.now(UTC)
-        last_attempt = _parse_ts(state.get("last_attempt_at"))
-        if last_attempt and not force:
-            elapsed = (now - last_attempt).total_seconds()
-            if elapsed < settings.mam_dynamic_seedbox_min_interval_seconds:
-                return {**state, "ok": bool(state.get("ok")), "skipped": True, "cooldown": True, "message": state.get("message") or "Skipped due to cooldown"}
-
         cookie = load_mam_cookie()
         if not cookie:
             result = {**state, "ok": False, "skipped": True, "cooldown": False, "auth_config_error": True, "message": "Missing MAM cookie; configure a MAM API mam_id token."}
@@ -273,6 +267,13 @@ class MamClient:
         if not mam_cookie_has_mam_id(cookie):
             result = {**state, "ok": False, "skipped": True, "cooldown": False, "auth_config_error": True, "message": "Missing mam_id; dynamic seedbox refresh requires an IP/ASN-locked MAM API mam_id session."}
             return result
+
+        last_attempt = _parse_ts(state.get("last_attempt_at"))
+        last_attempt_reached_mam = not state.get("network_error")
+        if last_attempt and last_attempt_reached_mam and not force:
+            elapsed = (now - last_attempt).total_seconds()
+            if elapsed < settings.mam_dynamic_seedbox_min_interval_seconds:
+                return {**state, "ok": bool(state.get("ok")), "skipped": True, "cooldown": True, "message": state.get("message") or "Skipped due to cooldown"}
 
         attempt_at = _now_iso()
         result: dict[str, Any] = {"ok": False, "skipped": False, "cooldown": False, "last_attempt_at": attempt_at}
@@ -290,8 +291,8 @@ class MamClient:
             if ok:
                 result["last_success_at"] = attempt_at
             result.update({"ok": ok, "cooldown": cooldown, "status_code": status_code, "message": message})
-            if status_code == 403:
-                result["auth_config_error"] = True
+            result["network_error"] = False
+            result["auth_config_error"] = status_code == 403
             if isinstance(data, dict):
                 result["ip"] = data.get("ip") or data.get("IP")
                 result["asn"] = data.get("asn") or data.get("ASN")

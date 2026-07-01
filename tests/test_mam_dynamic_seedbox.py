@@ -122,3 +122,53 @@ def test_api_safety(monkeypatch, tmp_path):
     assert response.status_code == 200
     assert "newsecret" not in response.text
     assert "newsecret" in Path(main.settings.mam_cookie_store_path).read_text()
+
+
+def test_dynamic_seedbox_auth_error_precedes_cooldown(monkeypatch, tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text('{"last_attempt_at":"2999-01-01T00:00:00+00:00","ok":true}')
+    monkeypatch.setattr(mam.settings, "mam_cookie_file", "")
+    monkeypatch.setattr(mam.settings, "mam_cookie_store_path", "")
+    monkeypatch.setattr(mam.settings, "mam_cookie", "")
+    monkeypatch.setattr(mam.settings, "mam_uid", "")
+    monkeypatch.setattr(mam.settings, "mam_session", "")
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_state_path", str(state))
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_enabled", True)
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_run_before_search", True)
+
+    try:
+        asyncio.run(mam.MamClient()._refresh_before_request())
+    except mam.MamError as exc:
+        assert "Missing MAM cookie" in str(exc)
+    else:
+        raise AssertionError("expected missing-cookie auth error")
+
+
+def test_dynamic_seedbox_retries_after_network_error(monkeypatch, tmp_path):
+    calls = 0
+    state = tmp_path / "state.json"
+    monkeypatch.setattr(mam.settings, "mam_cookie_file", "")
+    monkeypatch.setattr(mam.settings, "mam_cookie_store_path", "")
+    monkeypatch.setattr(mam.settings, "mam_cookie", "mam_id=secret")
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_state_path", str(state))
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_min_interval_seconds", 3600)
+
+    class Client:
+        def __init__(self, timeout): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def get(self, url, headers):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise mam.httpx.ConnectError("vpn down")
+            return Resp(200, {"Success": True, "message": "Completed"})
+
+    monkeypatch.setattr(mam.httpx, "AsyncClient", Client)
+    client = mam.MamClient()
+    first = asyncio.run(client.refresh_dynamic_seedbox_ip())
+    assert first["network_error"] is True
+    second = asyncio.run(client.refresh_dynamic_seedbox_ip())
+    assert second["ok"] is True
+    assert second["network_error"] is False
+    assert calls == 2

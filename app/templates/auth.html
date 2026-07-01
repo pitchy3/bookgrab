@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BookGrab Source Auth</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="container">
+  <h1>BookGrab</h1>
+  <p><a href="/">Back to search</a></p>
+  {% if not logged_in %}
+  <div id="loginCard" class="card">
+    <h2>Login</h2>
+    <input id="username" placeholder="Username" />
+    <input id="password" type="password" placeholder="Password" />
+    <button id="loginBtn">Login</button>
+  </div>
+  {% endif %}
+
+  <div id="app" class="{% if not logged_in %}hidden{% endif %}">
+    <div id="status"></div>
+    <div class="card source-auth-card">
+      <h2>MAM Source Auth</h2>
+      <div id="sourceAuthStatus" class="source-auth-status">Loading source auth status...</div>
+      <button id="refreshSeedboxBtn" type="button">Refresh dynamic seedbox IP now</button>
+      <div class="source-auth-form">
+        <input id="mamCookieInput" type="password" autocomplete="off" placeholder="Paste MAM API mam_id token/cookie" />
+        <button id="saveMamCookieBtn" type="button">Save cookie/token</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+window.DEFAULTS = {};
+</script>
+<script src="/static/app.js"></script>
+</body>
+</html>

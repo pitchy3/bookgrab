@@ -41,3 +41,5 @@ tr td:last-child{border-right:1px solid rgba(148,163,184,.2);border-radius:0 10p
 .status-row{margin:.1rem 0 .35rem 0}.status-row:last-child{margin-bottom:0}
 
 .source-auth-card h2{margin:.1rem 0 .65rem;font-size:1rem;color:#bfd1ff}.source-auth-status{margin:.35rem 0 .6rem;color:#cbd5e1;font-size:.9rem;line-height:1.35}.source-auth-form{margin-top:.5rem}#mamCookieInput{min-width:min(100%,360px)}
+
+.source-auth-link{margin:.2rem 0 .9rem;font-size:.9rem}.source-auth-link a{color:#93c5fd}

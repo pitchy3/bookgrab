@@ -184,3 +184,18 @@ def test_api_search_plex_error_does_not_break(monkeypatch):
     row = response.json()["results"][0]
     assert row["in_library"] is False
     assert row["library_matches"] == []
+
+
+def test_source_auth_panel_moves_to_auth_page(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", False)
+
+    client = TestClient(main.app)
+    home = client.get("/")
+    auth = client.get("/auth")
+
+    assert home.status_code == 200
+    assert auth.status_code == 200
+    assert "MAM Source Auth" not in home.text
+    assert "/auth" in home.text
+    assert "MAM Source Auth" in auth.text
+    assert "sourceAuthStatus" in auth.text

@@ -7,6 +7,7 @@ const sourceAuthStatusEl = document.getElementById('sourceAuthStatus');
 let statusTimeoutId = null;
 
 function setStatus(msg, level='success'){
+  if (!statusEl) return;
   statusEl.textContent = msg;
   statusEl.className = level === 'success' ? 'ok' : (level === 'warning' ? 'status-warn' : 'err');
 
@@ -246,6 +247,7 @@ function confirmLibraryGrab(result) {
 }
 
 function renderResults(results){
+  if (!tbody) return;
   tbody.innerHTML = '';
   const mediaType = document.getElementById('mediaType').value;
 
@@ -420,8 +422,10 @@ document.getElementById('searchBtn')?.addEventListener('click', doSearch);
 document.getElementById('refreshSeedboxBtn')?.addEventListener('click', refreshDynamicSeedbox);
 document.getElementById('saveMamCookieBtn')?.addEventListener('click', saveMamCookie);
 loadSourceAuthStatus();
-document.getElementById('mediaType').value = window.DEFAULTS.mediaType || 'audiobook';
-document.getElementById('sort').value = window.DEFAULTS.sort || 'seedersDesc';
+const mediaTypeSelect = document.getElementById('mediaType');
+if (mediaTypeSelect) mediaTypeSelect.value = window.DEFAULTS?.mediaType || 'audiobook';
+const sortSelect = document.getElementById('sort');
+if (sortSelect) sortSelect.value = window.DEFAULTS?.sort || 'seedersDesc';
 
 document.getElementById('loginBtn')?.addEventListener('click', async () => {
   const username = document.getElementById('username').value;

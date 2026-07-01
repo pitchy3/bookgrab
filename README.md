@@ -96,6 +96,22 @@ Important:
 - If raw cookie auth is empty, it can construct cookies from separate ID/session fields.
 - Secrets stay server-side and are never returned to frontend responses.
 
+### MAM Dynamic Seedbox IP refresh
+
+For MAM behind a VPN/Gluetun or another changing outbound IP, create an IP/ASN-locked API session in MAM security preferences and use the resulting `mam_id` API token. Do **not** use a normal browser session cookie; MAM may return `Incorrect session type` for browser sessions. BookGrab does not implement username/password login automation and does not scrape MAM.
+
+Recommended configuration:
+
+```env
+MAM_DYNAMIC_SEEDBOX_ENABLED=true
+MAM_COOKIE_STORE_PATH=/config/mam_cookie
+MAM_DYNAMIC_SEEDBOX_STATE_PATH=/config/mam_dynamic_seedbox.json
+```
+
+You can paste/update the API `mam_id` token in the Source Auth panel without recreating the container. If an external script manages the token file, set `MAM_COOKIE_FILE=/config/mam_cookie`; file-based cookies are read at request time. Cookie precedence is `MAM_COOKIE_FILE`, then `MAM_COOKIE_STORE_PATH`, then `MAM_COOKIE`, then `MAM_UID`/`MAM_SESSION`.
+
+MAM's dynamic seedbox endpoint is rate-limited to once per hour, so BookGrab records refresh state and intentionally skips repeated calls inside `MAM_DYNAMIC_SEEDBOX_MIN_INTERVAL_SECONDS` (default `3600`). If you see `Incorrect session type`, you likely used a normal browser cookie instead of an API/IP-locked `mam_id` session. If you see `IP mismatch` or `ASN mismatch`, the API session was likely created for a different outbound IP/ASN than the BookGrab container uses. When using Gluetun, create and refresh the MAM API session from the same VPN egress path used by BookGrab.
+
 
 ## Source API compatibility
 

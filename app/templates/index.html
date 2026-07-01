@@ -32,6 +32,15 @@
       <button id="searchBtn">Search</button>
     </div>
     <div id="status"></div>
+    <div class="card source-auth-card">
+      <h2>MAM Source Auth</h2>
+      <div id="sourceAuthStatus" class="source-auth-status">Loading source auth status...</div>
+      <button id="refreshSeedboxBtn" type="button">Refresh dynamic seedbox IP now</button>
+      <div class="source-auth-form">
+        <input id="mamCookieInput" type="password" autocomplete="off" placeholder="Paste MAM API mam_id token/cookie" />
+        <button id="saveMamCookieBtn" type="button">Save cookie/token</button>
+      </div>
+    </div>
     <table id="results">
       <thead>
         <tr>

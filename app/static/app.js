@@ -2,12 +2,13 @@ const statusEl = document.getElementById('status');
 const tbody = document.querySelector('#results tbody');
 const app = document.getElementById('app');
 const loginCard = document.getElementById('loginCard');
+const sourceAuthStatusEl = document.getElementById('sourceAuthStatus');
 
 let statusTimeoutId = null;
 
 function setStatus(msg, level='success'){
   statusEl.textContent = msg;
-  statusEl.className = level === 'success' ? 'ok' : 'err';
+  statusEl.className = level === 'success' ? 'ok' : (level === 'warning' ? 'status-warn' : 'err');
 
   if (statusTimeoutId) {
     clearTimeout(statusTimeoutId);
@@ -31,6 +32,67 @@ async function doSearch() {
   const data = await resp.json();
   if (!resp.ok) return setStatus(data.detail || 'Search failed', 'error');
   renderResults(data.results || []);
+}
+
+function formatDynamicState(state) {
+  if (!state || Object.keys(state).length === 0) return 'No refresh recorded';
+  const parts = [];
+  if (state.status_code) parts.push(`HTTP ${state.status_code}`);
+  if (state.ok === true) parts.push('ok');
+  if (state.cooldown === true) parts.push('cooldown');
+  if (state.message) parts.push(state.message);
+  if (state.ip) parts.push(`IP ${state.ip}`);
+  if (state.asn) parts.push(`ASN ${state.asn}`);
+  if (state.as) parts.push(state.as);
+  if (state.last_attempt_at) parts.push(`last attempt ${state.last_attempt_at}`);
+  return parts.join(' • ') || 'No refresh recorded';
+}
+
+async function loadSourceAuthStatus() {
+  if (!sourceAuthStatusEl) return;
+  try {
+    const resp = await fetch('/api/source-auth/status');
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || 'Failed to load source auth status');
+    sourceAuthStatusEl.textContent = `Cookie configured: ${data.mam_cookie_configured ? 'yes' : 'no'} • mam_id present: ${data.mam_id_present ? 'yes' : 'no'} • Dynamic seedbox: ${data.dynamic_seedbox_enabled ? 'enabled' : 'disabled'} • ${formatDynamicState(data.last_dynamic_seedbox_refresh)}`;
+  } catch (error) {
+    sourceAuthStatusEl.textContent = 'Unable to load source auth status';
+  }
+}
+
+async function refreshDynamicSeedbox() {
+  const button = document.getElementById('refreshSeedboxBtn');
+  if (button) button.disabled = true;
+  try {
+    const resp = await fetch('/api/source-auth/dynamic-seedbox-refresh', {method:'POST'});
+    const data = await resp.json();
+    const failed = !resp.ok || data.ok === false;
+    if (failed && data.cooldown !== true) {
+      setStatus(data.message || data.detail || 'Dynamic seedbox refresh failed', 'error');
+      await loadSourceAuthStatus();
+      return;
+    }
+    if (data.cooldown === true) {
+      setStatus(data.message || 'Dynamic seedbox refresh skipped due to cooldown', 'warning');
+    } else {
+      setStatus(data.message || (data.ok ? 'Dynamic seedbox refreshed' : 'Dynamic seedbox refresh completed'));
+    }
+    await loadSourceAuthStatus();
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function saveMamCookie() {
+  const input = document.getElementById('mamCookieInput');
+  const cookie = input?.value.trim() || '';
+  if (!cookie) return setStatus('Paste a MAM API cookie/token first', 'warning');
+  const resp = await fetch('/api/source-auth/cookie', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cookie})});
+  if (input) input.value = '';
+  const data = await resp.json();
+  if (!resp.ok) return setStatus(data.detail || 'Failed to save cookie/token', 'error');
+  setStatus('MAM API cookie/token saved');
+  await loadSourceAuthStatus();
 }
 
 function appendLabeledValue(container, label, value) {
@@ -355,6 +417,9 @@ async function doAdd(evt, result){
 }
 
 document.getElementById('searchBtn')?.addEventListener('click', doSearch);
+document.getElementById('refreshSeedboxBtn')?.addEventListener('click', refreshDynamicSeedbox);
+document.getElementById('saveMamCookieBtn')?.addEventListener('click', saveMamCookie);
+loadSourceAuthStatus();
 document.getElementById('mediaType').value = window.DEFAULTS.mediaType || 'audiobook';
 document.getElementById('sort').value = window.DEFAULTS.sort || 'seedersDesc';
 
@@ -367,4 +432,5 @@ document.getElementById('loginBtn')?.addEventListener('click', async () => {
   app.classList.remove('hidden');
   loginCard?.classList.add('hidden');
   setStatus('Logged in');
+  loadSourceAuthStatus();
 });

@@ -15,7 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import MAM_HASH_LOOKUP_SCOPES, settings
 from app.db import add_history, get_db_path, get_import_status, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download
-from app.mam import MamClient, MamError
+from app.mam import MamClient, MamError, load_dynamic_seedbox_state, load_mam_cookie, mam_cookie_has_mam_id, normalize_mam_cookie
 from app.models import AddRequest, SearchRequest
 from app.importer import importer_loop, run_import_once
 from app.qbittorrent import QbitClient, QbitError, _torrent_info_hash
@@ -150,6 +150,13 @@ async def startup() -> None:
 
     if settings.import_min_completion_ratio_legacy_present:
         print("Startup warning: IMPORT_MIN_COMPLETION_RATIO is deprecated and ignored; importer completion now requires amount_left == 0")
+
+    if settings.mam_dynamic_seedbox_enabled and settings.mam_dynamic_seedbox_run_on_startup:
+        result = await mam_client.refresh_dynamic_seedbox_ip(force=False)
+        if result.get("ok") or result.get("skipped") or result.get("cooldown"):
+            print(f"MAM dynamic seedbox refresh startup: {result.get('message', 'ok')}")
+        else:
+            print(f"Startup warning: MAM dynamic seedbox refresh failed: {result.get('message', 'unknown error')}")
 
     if settings.import_enabled:
         print("Importer: enabled")
@@ -308,6 +315,47 @@ async def api_add(payload: AddRequest, request: Request) -> dict[str, Any]:
         add_history(str(payload.id), matched.get("title", ""), cached_media_type, "", "failed", str(exc))
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"ok": True, "message": "Added to qBittorrent", "hash": result.get("hash"), "category": result.get("category"), "import_status": import_status}
+
+
+@app.get("/api/source-auth/status")
+async def api_source_auth_status(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    cookie = load_mam_cookie()
+    return {
+        "mam_cookie_configured": bool(cookie),
+        "mam_id_present": mam_cookie_has_mam_id(cookie),
+        "dynamic_seedbox_enabled": settings.mam_dynamic_seedbox_enabled,
+        "dynamic_seedbox_url_configured": bool(settings.mam_dynamic_seedbox_url),
+        "last_dynamic_seedbox_refresh": load_dynamic_seedbox_state(),
+    }
+
+
+@app.post("/api/source-auth/dynamic-seedbox-refresh")
+async def api_source_auth_dynamic_seedbox_refresh(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    return await mam_client.refresh_dynamic_seedbox_ip(force=True)
+
+
+@app.post("/api/source-auth/cookie")
+async def api_source_auth_cookie(request: Request) -> dict[str, Any]:
+    _require_login(request)
+    data = await request.json()
+    cookie = normalize_mam_cookie(str(data.get("cookie") or data.get("token") or ""))
+    if not cookie:
+        raise HTTPException(status_code=400, detail="Missing MAM API cookie/token")
+    if not mam_cookie_has_mam_id(cookie):
+        raise HTTPException(status_code=400, detail="MAM dynamic seedbox support requires a mam_id API token/cookie")
+    path = Path(settings.mam_cookie_store_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(cookie + "\n", encoding="utf-8")
+        os.chmod(path, 0o600)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Failed to save MAM cookie/token") from exc
+    result: dict[str, Any] | None = None
+    if settings.mam_dynamic_seedbox_enabled:
+        result = await mam_client.refresh_dynamic_seedbox_ip(force=True)
+    return {"ok": True, "mam_id_present": True, "dynamic_seedbox_refresh": result}
 
 
 @app.post("/api/import/run")

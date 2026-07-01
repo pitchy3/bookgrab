@@ -8,7 +8,7 @@ let statusTimeoutId = null;
 
 function setStatus(msg, level='success'){
   statusEl.textContent = msg;
-  statusEl.className = level === 'success' ? 'ok' : 'err';
+  statusEl.className = level === 'success' ? 'ok' : (level === 'warning' ? 'status-warn' : 'err');
 
   if (statusTimeoutId) {
     clearTimeout(statusTimeoutId);
@@ -66,8 +66,17 @@ async function refreshDynamicSeedbox() {
   try {
     const resp = await fetch('/api/source-auth/dynamic-seedbox-refresh', {method:'POST'});
     const data = await resp.json();
-    if (!resp.ok) return setStatus(data.detail || 'Dynamic seedbox refresh failed', 'error');
-    setStatus(data.message || (data.ok ? 'Dynamic seedbox refreshed' : 'Dynamic seedbox refresh completed'));
+    const failed = !resp.ok || data.ok === false;
+    if (failed && data.cooldown !== true) {
+      setStatus(data.message || data.detail || 'Dynamic seedbox refresh failed', 'error');
+      await loadSourceAuthStatus();
+      return;
+    }
+    if (data.cooldown === true) {
+      setStatus(data.message || 'Dynamic seedbox refresh skipped due to cooldown', 'warning');
+    } else {
+      setStatus(data.message || (data.ok ? 'Dynamic seedbox refreshed' : 'Dynamic seedbox refresh completed'));
+    }
     await loadSourceAuthStatus();
   } finally {
     if (button) button.disabled = false;

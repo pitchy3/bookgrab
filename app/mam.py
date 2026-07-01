@@ -20,12 +20,10 @@ class MamError(Exception):
     pass
 
 
-class MamDynamicSeedboxConfigError(MamError):
-    pass
-
-
 def normalize_mam_cookie(value: str) -> str:
     text = str(value or "").strip()
+    if text.lower().startswith("cookie:"):
+        text = text[7:].strip()
     if not text:
         return ""
     if "=" not in text and ";" not in text:

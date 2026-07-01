@@ -21,6 +21,7 @@ def test_cookie_normalization():
     assert mam.normalize_mam_cookie("") == ""
     assert mam.normalize_mam_cookie(" token ") == "mam_id=token"
     assert mam.normalize_mam_cookie("mam_id=token") == "mam_id=token"
+    assert mam.normalize_mam_cookie("Cookie: mam_id=token") == "mam_id=token"
     assert mam.normalize_mam_cookie("mam_id=abc; mam_session=xyz") == "mam_id=abc; mam_session=xyz"
 
 
@@ -142,6 +143,28 @@ def test_dynamic_seedbox_auth_error_precedes_cooldown(monkeypatch, tmp_path):
         assert "Missing MAM cookie" in str(exc)
     else:
         raise AssertionError("expected missing-cookie auth error")
+
+
+def test_dynamic_seedbox_missing_mam_id_precedes_cooldown(monkeypatch, tmp_path):
+    state = tmp_path / "state.json"
+    state.write_text('{"last_attempt_at":"2999-01-01T00:00:00+00:00","ok":true}')
+    monkeypatch.setattr(mam.settings, "mam_cookie_file", "")
+    monkeypatch.setattr(mam.settings, "mam_cookie_store_path", "")
+    monkeypatch.setattr(mam.settings, "mam_cookie", "mam_session=abc")
+    monkeypatch.setattr(mam.settings, "mam_uid", "")
+    monkeypatch.setattr(mam.settings, "mam_session", "")
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_state_path", str(state))
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_enabled", True)
+    monkeypatch.setattr(mam.settings, "mam_dynamic_seedbox_run_before_search", True)
+
+    try:
+        asyncio.run(mam.MamClient()._refresh_before_request())
+    except mam.MamError as exc:
+        message = str(exc)
+        assert "mam_id" in message
+        assert "MAM API" in message
+    else:
+        raise AssertionError("expected missing-mam_id auth error")
 
 
 def test_dynamic_seedbox_retries_after_network_error(monkeypatch, tmp_path):

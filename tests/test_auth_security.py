@@ -50,6 +50,35 @@ def test_login_sets_secure_cookie_flags(monkeypatch):
     assert "expires=" in cookie
 
 
+def test_session_token_expires(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_username", "admin")
+    monkeypatch.setattr(main.settings, "app_session_secret", "s" * 32)
+    token = main._sign_token("admin", issued_at=100, nonce="fixed")
+    assert main._verify_token(token, now=100 + main._SESSION_MAX_AGE_SECONDS)
+    assert not main._verify_token(token, now=101 + main._SESSION_MAX_AGE_SECONDS)
+
+
+def test_session_token_rejects_tampering(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_username", "admin")
+    monkeypatch.setattr(main.settings, "app_session_secret", "s" * 32)
+    token = main._sign_token("admin", issued_at=100, nonce="fixed")
+    assert not main._verify_token(token + "x", now=100)
+
+
+def test_login_rate_limits_repeated_failures(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", True)
+    monkeypatch.setattr(main.settings, "app_username", "admin")
+    monkeypatch.setattr(main.settings, "app_password", "safe-pass")
+    main._login_failures.clear()
+    client = TestClient(main.app)
+    try:
+        for _ in range(main._LOGIN_MAX_FAILURES):
+            assert client.post("/login", json={"username": "admin", "password": "wrong"}).status_code == 401
+        assert client.post("/login", json={"username": "admin", "password": "safe-pass"}).status_code == 429
+    finally:
+        main._login_failures.clear()
+
+
 def test_startup_calls_auth_validation(monkeypatch):
     called = {"ok": False}
 

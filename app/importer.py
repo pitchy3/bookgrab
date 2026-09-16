@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -238,17 +239,30 @@ def hardlink_file(src: str | Path, dst: str | Path, conflict_policy: str, dry_ru
         raise ValueError(f"Refusing to hardlink symlink source: {srcp}")
     if not srcp.is_file():
         raise FileNotFoundError(f"Source file is not regular: {srcp}")
-    dstp.parent.mkdir(parents=True, exist_ok=True)
+    if conflict_policy not in {"skip", "replace"}:
+        raise ValueError(f"Unsupported conflict policy: {conflict_policy}")
     if dstp.exists():
         if conflict_policy == "skip":
             return "skipped"
-        if conflict_policy == "replace":
-            dstp.unlink()
-        elif conflict_policy != "skip":
-            raise ValueError(f"Unsupported conflict policy: {conflict_policy}")
     if dry_run:
         return "linked"
-    os.link(srcp, dstp)
+    dstp.parent.mkdir(parents=True, exist_ok=True)
+    if conflict_policy == "skip":
+        try:
+            os.link(srcp, dstp)
+            return "linked"
+        except FileExistsError:
+            return "skipped"
+
+    fd, temporary_name = tempfile.mkstemp(prefix=".bookgrab-", dir=dstp.parent)
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        temporary.unlink()
+        os.link(srcp, temporary)
+        os.replace(temporary, dstp)
+    finally:
+        temporary.unlink(missing_ok=True)
     return "linked"
 
 

@@ -151,6 +151,13 @@ def _sanitize_dynamic_message(message: str, status_code: int | None = None) -> s
     return msg
 
 
+def _response_json(resp: httpx.Response, context: str) -> Any:
+    try:
+        return resp.json()
+    except ValueError as exc:
+        raise MamError(f"Unexpected non-JSON response from {context}") from exc
+
+
 def _parse_people(value: Any) -> str:
     if isinstance(value, list):
         return ", ".join(str(item.get("name", "")).strip() for item in value if isinstance(item, dict)).strip(", ")
@@ -311,7 +318,7 @@ class MamClient:
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
                 raise MamError(_classify_mam_http_error(exc, "search API")) from exc
-        data = resp.json()
+        data = _response_json(resp, "search API")
         rows = data.get("data") if isinstance(data, dict) else data
         if not isinstance(rows, list):
             raise MamError("Unexpected response from search API")
@@ -331,7 +338,7 @@ class MamClient:
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
                 raise MamError(_classify_mam_http_error(exc, "MAM hash lookup API")) from exc
-        data = resp.json()
+        data = _response_json(resp, "MAM hash lookup API")
         rows = data.get("data") if isinstance(data, dict) else data
         if rows in (None, ""):
             return None

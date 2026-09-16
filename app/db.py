@@ -145,8 +145,11 @@ def update_download_qbit_info(download_id: int, qbit_hash: str | None = None, qb
 def record_imported_file(download_id: int, source_path: str, destination_path: str, size_bytes: int | None, status: str, error: str | None = None) -> None:
     with get_conn() as conn:
         conn.execute(
-            """INSERT OR IGNORE INTO imported_files (download_id,source_path,destination_path,size_bytes,imported_at,status,error)
-            VALUES (?,?,?,?,?,?,?)""",
+            """INSERT INTO imported_files (download_id,source_path,destination_path,size_bytes,imported_at,status,error)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(download_id, source_path, destination_path) DO UPDATE SET
+              size_bytes=excluded.size_bytes, imported_at=excluded.imported_at,
+              status=excluded.status, error=excluded.error""",
             (download_id, source_path, destination_path, size_bytes, datetime.now(UTC).isoformat(), status, error),
         )
         conn.commit()

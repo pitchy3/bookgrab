@@ -79,6 +79,27 @@ def test_login_rate_limits_repeated_failures(monkeypatch):
         main._login_failures.clear()
 
 
+def test_login_handles_non_ascii_credentials_as_invalid(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_auth_enabled", True)
+    monkeypatch.setattr(main.settings, "app_username", "admin")
+    monkeypatch.setattr(main.settings, "app_password", "safe-pass")
+    main._login_failures.clear()
+    try:
+        response = TestClient(main.app).post("/login", json={"username": "é", "password": "wrong"})
+        assert response.status_code == 401
+    finally:
+        main._login_failures.clear()
+
+
+def test_login_uses_forwarded_client_only_from_trusted_proxy(monkeypatch):
+    monkeypatch.setattr(main.settings, "app_trusted_proxy_ips", ["testclient"])
+    request = type("Request", (), {
+        "client": type("Client", (), {"host": "testclient"})(),
+        "headers": {"x-forwarded-for": "203.0.113.7, 10.0.0.2"},
+    })()
+    assert main._login_key(request) == "203.0.113.7"
+
+
 def test_startup_calls_auth_validation(monkeypatch):
     called = {"ok": False}
 

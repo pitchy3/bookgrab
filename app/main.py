@@ -234,7 +234,7 @@ async def logout() -> RedirectResponse:
 async def health() -> JSONResponse:
     try:
         with get_conn() as conn:
-            conn.execute("SELECT 1").fetchone()
+            conn.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()
     except Exception:  # noqa: BLE001
         return JSONResponse({"ok": False, "database": "unavailable"}, status_code=503)
     return JSONResponse({"ok": True, "database": "ok"})

@@ -41,3 +41,17 @@ def test_init_db_migrates_existing_downloads_without_metadata_columns(monkeypatc
     with db.get_conn() as conn:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)").fetchall()}
     assert {"author", "narrator", "series"}.issubset(columns)
+
+
+def test_record_imported_file_updates_retry_result(monkeypatch, tmp_path):
+    db_file = tmp_path / "app.db"
+    monkeypatch.setattr(db.settings, "database_path", str(db_file))
+    db.init_db()
+    download_id = db.record_download(media_type="audiobook", import_status="queued")
+    db.record_imported_file(download_id, "/source/book.m4b", "/library/book.m4b", None, "failed", "link failed")
+    db.record_imported_file(download_id, "/source/book.m4b", "/library/book.m4b", 123, "imported")
+
+    row = db.get_import_status()["recent_files"][0]
+    assert row["status"] == "imported"
+    assert row["size_bytes"] == 123
+    assert row["error"] is None

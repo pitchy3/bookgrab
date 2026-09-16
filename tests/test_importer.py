@@ -1,6 +1,8 @@
 from pathlib import Path
 import asyncio
 
+import pytest
+
 from app import importer
 from app.importer import find_importable_files, hardlink_file, is_supported_media_file, plan_imports
 
@@ -71,6 +73,27 @@ def test_conflict_replace(tmp_path):
     dst = tmp_path / "b" / "a.m4b"; dst.parent.mkdir(parents=True); dst.write_bytes(b"old")
     assert hardlink_file(src, dst, "replace", False) == "linked"
     assert dst.read_bytes() == b"abc"
+
+
+def test_conflict_replace_dry_run_does_not_modify_destination(tmp_path):
+    src = tmp_path / "a.m4b"; src.write_bytes(b"new")
+    dst = tmp_path / "b" / "a.m4b"; dst.parent.mkdir(parents=True); dst.write_bytes(b"old")
+    assert hardlink_file(src, dst, "replace", True) == "linked"
+    assert dst.read_bytes() == b"old"
+    assert list(dst.parent.iterdir()) == [dst]
+
+
+def test_conflict_replace_preserves_destination_when_link_fails(tmp_path, monkeypatch):
+    src = tmp_path / "a.m4b"; src.write_bytes(b"new")
+    dst = tmp_path / "b" / "a.m4b"; dst.parent.mkdir(parents=True); dst.write_bytes(b"old")
+
+    def fail_link(_source, _destination):
+        raise OSError("simulated link failure")
+
+    monkeypatch.setattr(importer.os, "link", fail_link)
+    with pytest.raises(OSError, match="simulated link failure"):
+        hardlink_file(src, dst, "replace", False)
+    assert dst.read_bytes() == b"old"
 
 
 def test_conflict_invalid_policy(tmp_path):

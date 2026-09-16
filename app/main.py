@@ -44,6 +44,7 @@ _SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
 _LOGIN_WINDOW_SECONDS = 60
 _LOGIN_MAX_FAILURES = 5
 _login_failures: dict[str, list[float]] = {}
+_login_failure_lock = asyncio.Lock()
 
 
 def _is_insecure_default(value: str, insecure_values: set[str]) -> bool:
@@ -112,13 +113,27 @@ def _is_logged_in(request: Request) -> bool:
 
 
 def _login_key(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+    peer = request.client.host if request.client else "unknown"
+    if peer in settings.app_trusted_proxy_ips:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        forwarded_client = forwarded_for.split(",", 1)[0].strip()
+        if forwarded_client:
+            return forwarded_client
+    return peer
 
 
-def _is_login_rate_limited(key: str, now: float) -> bool:
-    recent = [attempt for attempt in _login_failures.get(key, []) if now - attempt < _LOGIN_WINDOW_SECONDS]
-    _login_failures[key] = recent
-    return len(recent) >= _LOGIN_MAX_FAILURES
+async def _record_login_attempt(key: str, now: float, credentials_valid: bool) -> bool:
+    async with _login_failure_lock:
+        recent = [attempt for attempt in _login_failures.get(key, []) if now - attempt < _LOGIN_WINDOW_SECONDS]
+        if len(recent) >= _LOGIN_MAX_FAILURES:
+            _login_failures[key] = recent
+            return True
+        if credentials_valid:
+            _login_failures.pop(key, None)
+        else:
+            recent.append(now)
+            _login_failures[key] = recent
+        return False
 
 
 def _require_login(request: Request) -> None:
@@ -233,17 +248,15 @@ async def source_auth(request: Request) -> HTMLResponse:
 async def login(request: Request) -> JSONResponse:
     if not settings.app_auth_enabled:
         return JSONResponse({"ok": True})
-    now = time.time()
-    key = _login_key(request)
-    if _is_login_rate_limited(key, now):
-        raise HTTPException(status_code=429, detail="Too many failed login attempts; try again later")
     data = await request.json()
-    username_ok = hmac.compare_digest(str(data.get("username", "")), settings.app_username)
-    password_ok = hmac.compare_digest(str(data.get("password", "")), settings.app_password)
+    username_ok = hmac.compare_digest(str(data.get("username", "")).encode(), settings.app_username.encode())
+    password_ok = hmac.compare_digest(str(data.get("password", "")).encode(), settings.app_password.encode())
+    key = _login_key(request)
+    limited = await _record_login_attempt(key, time.time(), username_ok and password_ok)
+    if limited:
+        raise HTTPException(status_code=429, detail="Too many failed login attempts; try again later")
     if not username_ok or not password_ok:
-        _login_failures.setdefault(key, []).append(now)
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    _login_failures.pop(key, None)
     response = JSONResponse({"ok": True})
     response.set_cookie(
         "session",

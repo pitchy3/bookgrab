@@ -242,7 +242,7 @@ def get_qbit_mam_sync_status() -> dict[str, Any]:
             last_lookup = conn.execute("SELECT MAX(looked_up_at) AS ts FROM qbit_mam_cache").fetchone()["ts"]
             last_inventory = conn.execute("SELECT qbit_inventory_seen_at AS ts FROM qbit_mam_sync_state WHERE id=1").fetchone()
             last_sync = last_inventory["ts"] if last_inventory is not None else last_lookup
-            last_errors = conn.execute("SELECT COUNT(*) AS c FROM qbit_mam_cache WHERE lookup_status='error'").fetchone()["c"]
+            last_errors = conn.execute("SELECT COUNT(*) AS c FROM qbit_mam_cache WHERE last_error IS NOT NULL").fetchone()["c"]
     except sqlite3.OperationalError as exc:
         if "no such table" not in str(exc):
             raise

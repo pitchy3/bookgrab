@@ -65,7 +65,7 @@ async function loadSourceAuthStatus() {
   if (!sourceAuthStatusEl) return;
   try {
     const resp = await fetch('/api/source-auth/status');
-    const data = await resp.json();
+    const data = await responseJson(resp);
     if (!resp.ok) throw new Error(data.detail || 'Failed to load source auth status');
     sourceAuthStatusEl.textContent = `Cookie configured: ${data.mam_cookie_configured ? 'yes' : 'no'} • mam_id present: ${data.mam_id_present ? 'yes' : 'no'} • Dynamic seedbox: ${data.dynamic_seedbox_enabled ? 'enabled' : 'disabled'} • ${formatDynamicState(data.last_dynamic_seedbox_refresh)}`;
   } catch (error) {
@@ -78,7 +78,7 @@ async function refreshDynamicSeedbox() {
   if (button) button.disabled = true;
   try {
     const resp = await fetch('/api/source-auth/dynamic-seedbox-refresh', {method:'POST'});
-    const data = await resp.json();
+    const data = await responseJson(resp);
     const failed = !resp.ok || data.ok === false;
     if (failed && data.cooldown !== true) {
       setStatus(data.message || data.detail || 'Dynamic seedbox refresh failed', 'error');

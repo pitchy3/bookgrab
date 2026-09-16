@@ -78,7 +78,6 @@ class QbitClient:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:
                 await self._login(client)
-                before = await self.get_torrents(client)
                 resp = await client.post(f"{self.base_url}/api/v2/torrents/add", data=form_data, files=files)
             except httpx.HTTPError as exc:
                 raise QbitError("qBittorrent is unavailable") from exc
@@ -93,17 +92,17 @@ class QbitClient:
                 if found:
                     after = [found]
                     break
-            except httpx.HTTPError:
+            except (httpx.HTTPError, QbitError):
                 after = []
             await asyncio.sleep(0.4)
         selected = after[0] if after else None
         return {
             "category": category,
-            "hash": selected.get("hash") if selected else None,
+            "hash": selected.get("hash") if selected else expected_hash,
             "name": selected.get("name") if selected else name,
             "save_path": selected.get("save_path") if selected else save_path,
             "content_path": selected.get("content_path") if selected else None,
-            "last_error": None if selected else "Could not find uploaded torrent in qBittorrent by info hash; importer will wait until matched manually.",
+            "last_error": None if selected else "Torrent was accepted by qBittorrent but post-add verification failed; importer will retry by the known info hash.",
         }
 
 

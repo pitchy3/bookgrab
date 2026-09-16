@@ -156,6 +156,11 @@ def _torrent_info_hash(torrent_bytes: bytes) -> str:
         if key == b'info':
             if torrent_bytes[value_start:value_start + 1] != b'd':
                 raise QbitError("Invalid torrent: info is not a dictionary")
-            return hashlib.sha1(torrent_bytes[value_start:value_end]).hexdigest()
+            info = torrent_bytes[value_start:value_end]
+            is_v2 = b"12:meta versioni2e" in info
+            is_hybrid = b"6:pieces" in info
+            if is_v2 and not is_hybrid:
+                return hashlib.sha256(info).hexdigest()
+            return hashlib.sha1(info).hexdigest()
         i = value_end
     raise QbitError("Invalid torrent: missing info dictionary")

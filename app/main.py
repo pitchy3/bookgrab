@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import MAM_HASH_LOOKUP_SCOPES, settings
-from app.db import add_history, get_db_path, get_import_status, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download
+from app.db import add_history, get_conn, get_db_path, get_import_status, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download
 from app.mam import MamClient, MamError, load_dynamic_seedbox_state, load_mam_cookie, mam_cookie_has_mam_id, normalize_mam_cookie
 from app.models import AddRequest, SearchRequest
 from app.importer import importer_loop, run_import_once
@@ -231,8 +231,13 @@ async def logout() -> RedirectResponse:
 
 
 @app.get("/api/health")
-async def health() -> dict[str, str | bool]:
-    return {"ok": True, "database": "ok"}
+async def health() -> JSONResponse:
+    try:
+        with get_conn() as conn:
+            conn.execute("SELECT 1").fetchone()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": False, "database": "unavailable"}, status_code=503)
+    return JSONResponse({"ok": True, "database": "ok"})
 
 
 @app.post("/api/search")

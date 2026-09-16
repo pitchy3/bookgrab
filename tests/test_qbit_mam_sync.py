@@ -1,7 +1,7 @@
 import asyncio
 
 from app import main
-from app.db import get_conn, get_qbit_mam_matches_by_mam_ids, init_db, record_download, upsert_qbit_mam_cache
+from app.db import get_conn, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download, upsert_qbit_mam_cache
 from app.qbit_mam_sync import MAM_HASH_LOOKUP_DELAY_SECONDS, sync_qbit_mam_hashes
 
 HASH1 = "a" * 40
@@ -100,6 +100,17 @@ def test_qbit_sync_preserves_known_match_on_transient_refresh_error(monkeypatch,
     assert row["lookup_status"] == "matched"
     assert row["mam_id"] == 42
     assert row["last_error"] == "temporary outage"
+    assert get_qbit_mam_sync_status()["last_error_count"] == 1
+
+
+def test_qbit_sync_records_nonempty_marker_for_empty_exception(monkeypatch, tmp_path):
+    _setup_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(main.settings, "mam_hash_lookup_enabled", True)
+    mam = FakeMam({HASH1: RuntimeError()})
+    asyncio.run(sync_qbit_mam_hashes(FakeQbit([HASH1]), mam, logger=lambda _msg: None))
+    with get_conn() as conn:
+        row = conn.execute("SELECT last_error FROM qbit_mam_cache WHERE qbit_hash=?", (HASH1,)).fetchone()
+    assert row["last_error"] == "RuntimeError"
 
 
 def test_qbit_sync_respects_max_per_run(monkeypatch, tmp_path):

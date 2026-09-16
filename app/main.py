@@ -17,7 +17,7 @@ from app.config import MAM_HASH_LOOKUP_SCOPES, settings
 from app.db import add_history, get_db_path, get_import_status, get_qbit_mam_matches_by_mam_ids, get_qbit_mam_sync_status, init_db, record_download
 from app.mam import MamClient, MamError, load_dynamic_seedbox_state, load_mam_cookie, mam_cookie_has_mam_id, normalize_mam_cookie
 from app.models import AddRequest, SearchRequest
-from app.importer import importer_loop, run_import_once
+from app.importer import ImporterAlreadyRunning, importer_loop, run_import_once
 from app.qbittorrent import QbitClient, QbitError, _torrent_info_hash
 from app.qbit_mam_sync import (
     MAM_HASH_LOOKUP_DELAY_SECONDS,
@@ -370,7 +370,10 @@ async def api_import_run(request: Request) -> dict[str, Any]:
     _require_login(request)
     if not settings.import_enabled:
         return {"enabled": False, "message": "Importer is disabled"}
-    return await run_import_once(qbit_client)
+    try:
+        return await run_import_once(qbit_client)
+    except ImporterAlreadyRunning as exc:
+        raise HTTPException(status_code=409, detail="Importer is already running") from exc
 
 
 @app.get("/api/import/status")

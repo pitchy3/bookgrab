@@ -238,17 +238,24 @@ def hardlink_file(src: str | Path, dst: str | Path, conflict_policy: str, dry_ru
         raise ValueError(f"Refusing to hardlink symlink source: {srcp}")
     if not srcp.is_file():
         raise FileNotFoundError(f"Source file is not regular: {srcp}")
-    dstp.parent.mkdir(parents=True, exist_ok=True)
     if dstp.exists():
         if conflict_policy == "skip":
             return "skipped"
-        if conflict_policy == "replace":
-            dstp.unlink()
-        elif conflict_policy != "skip":
+        if conflict_policy != "replace":
             raise ValueError(f"Unsupported conflict policy: {conflict_policy}")
     if dry_run:
         return "linked"
-    os.link(srcp, dstp)
+    dstp.parent.mkdir(parents=True, exist_ok=True)
+    if dstp.exists():
+        temporary = dstp.with_name(f".{dstp.name}.bookgrab-{os.getpid()}.tmp")
+        try:
+            temporary.unlink(missing_ok=True)
+            os.link(srcp, temporary)
+            os.replace(temporary, dstp)
+        finally:
+            temporary.unlink(missing_ok=True)
+    else:
+        os.link(srcp, dstp)
     return "linked"
 
 

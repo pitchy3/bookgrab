@@ -96,6 +96,27 @@ def test_conflict_replace_preserves_destination_when_link_fails(tmp_path, monkey
     assert dst.read_bytes() == b"old"
 
 
+def test_conflict_skip_honors_file_created_during_link(tmp_path, monkeypatch):
+    src = tmp_path / "a.m4b"; src.write_bytes(b"new")
+    dst = tmp_path / "b" / "a.m4b"
+
+    def race_link(_source, destination):
+        Path(destination).write_bytes(b"racer")
+        raise FileExistsError
+
+    monkeypatch.setattr(importer.os, "link", race_link)
+    assert hardlink_file(src, dst, "skip", False) == "skipped"
+    assert dst.read_bytes() == b"racer"
+
+
+def test_conflict_replace_supports_max_length_destination_name(tmp_path):
+    src = tmp_path / "a.m4b"; src.write_bytes(b"new")
+    dst = tmp_path / ("x" * 250 + ".m4b")
+    dst.write_bytes(b"old")
+    assert hardlink_file(src, dst, "replace", False) == "linked"
+    assert dst.read_bytes() == b"new"
+
+
 def test_conflict_invalid_policy(tmp_path):
     src = tmp_path / "a.m4b"; src.write_bytes(b"abc")
     dst = tmp_path / "b" / "a.m4b"; dst.parent.mkdir(parents=True); dst.write_bytes(b"old")

@@ -16,6 +16,11 @@ COMPLETE_STATES = {"uploading", "stalledup", "queuedup", "pausedup", "forcedup",
 GENERIC_AUDIO_FOLDER_PATTERN = re.compile(r"^(?:cd\s*\d*|disc\s*\d*|audio|mp3)$", re.IGNORECASE)
 AUDIO_SPLIT_EXTENSIONS = {".m4b"}
 AUDIO_GROUP_EXTENSIONS = {".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
+importer_lock = asyncio.Lock()
+
+
+class ImporterAlreadyRunning(RuntimeError):
+    pass
 
 
 @dataclass
@@ -309,7 +314,7 @@ async def import_download(download: dict, qbit_torrent: dict | None) -> str:
         return "failed"
 
 
-async def run_import_once(qbit_client=None) -> dict:
+async def _run_import_once_unlocked(qbit_client=None) -> dict:
     if not settings.import_enabled:
         print("Importer: disabled")
         return {"enabled": False, "processed": 0}
@@ -360,6 +365,13 @@ async def run_import_once(qbit_client=None) -> dict:
         summary["processed"] += 1
     print(f"Importer: pass end; summary={summary}")
     return summary
+
+
+async def run_import_once(qbit_client=None) -> dict:
+    if importer_lock.locked():
+        raise ImporterAlreadyRunning("Importer is already running")
+    async with importer_lock:
+        return await _run_import_once_unlocked(qbit_client)
 
 
 async def importer_loop() -> None:

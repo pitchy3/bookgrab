@@ -192,15 +192,15 @@ async def shutdown() -> None:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
     if settings.app_auth_enabled and not _is_logged_in(request):
-        return templates.TemplateResponse("index.html", {"request": request, "logged_in": False, "defaults": settings})
-    return templates.TemplateResponse("index.html", {"request": request, "logged_in": True, "defaults": settings})
+        return templates.TemplateResponse(request, "index.html", {"logged_in": False, "defaults": settings})
+    return templates.TemplateResponse(request, "index.html", {"logged_in": True, "defaults": settings})
 
 
 @app.get("/auth", response_class=HTMLResponse)
 async def source_auth(request: Request) -> HTMLResponse:
     if settings.app_auth_enabled and not _is_logged_in(request):
-        return templates.TemplateResponse("auth.html", {"request": request, "logged_in": False})
-    return templates.TemplateResponse("auth.html", {"request": request, "logged_in": True})
+        return templates.TemplateResponse(request, "auth.html", {"logged_in": False})
+    return templates.TemplateResponse(request, "auth.html", {"logged_in": True})
 
 
 @app.post("/login")

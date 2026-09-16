@@ -145,7 +145,7 @@ def _is_due(row: Any, now: datetime) -> bool:
     if looked_up_at is None:
         return True
     status = row["lookup_status"]
-    if status == "error" or row["last_error"]:
+    if status == "error" or row["last_error"] is not None:
         return now - looked_up_at >= timedelta(hours=settings.mam_hash_lookup_retry_error_ttl_hours)
     if status == "no_match":
         return now - looked_up_at >= timedelta(days=settings.mam_hash_lookup_no_match_ttl_days)
@@ -336,6 +336,7 @@ async def sync_qbit_mam_hashes(
                 )
         except Exception as exc:  # noqa: BLE001
             errors += 1
+            error_message = str(exc) or exc.__class__.__name__
             previous = get_qbit_mam_cache_by_hash(qbit_hash)
             preserve_match = previous is not None and previous["lookup_status"] == "matched"
             upsert_qbit_mam_cache(
@@ -348,7 +349,7 @@ async def sync_qbit_mam_hashes(
                 media_type=previous["media_type"] if preserve_match else None,
                 qbit_name=torrent.get("name"),
                 qbit_category=torrent.get("category"),
-                last_error=str(exc),
+                last_error=error_message,
             )
         processed += 1
         remaining = len(run_pending) - processed

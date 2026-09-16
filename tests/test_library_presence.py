@@ -290,7 +290,7 @@ def test_plex_albums_index_metadata_album_nodes(monkeypatch):
     provider = library_presence.PlexProvider()
     books = asyncio.run(provider.refresh_index())
 
-    assert books == [LibraryBook(title='Carrie', authors='Stephen King', narrators='Narrator: Sissy Spacek')]
+    assert books == [LibraryBook(title='Carrie', authors='Stephen King', narrators='Sissy Spacek')]
     assert requests == ['http://plex.local/library/sections/1/albums']
 
 
@@ -303,3 +303,13 @@ def test_plex_album_matches_when_narrator_not_required(monkeypatch):
 
     assert match is not None
     assert match.provider == 'Plex'
+
+
+def test_plex_album_uses_role_person_name_for_strict_narrator_match(monkeypatch):
+    monkeypatch.setattr(library_presence.settings, 'library_presence_require_narrator', True)
+    provider = library_presence.PlexProvider()
+    provider._index = [LibraryBook(title='Carrie', authors='Stephen King', narrators='Sissy Spacek')]
+
+    match = provider.find_match('Carrie', 'Stephen King', 'Sissy Spacek')
+
+    assert match is not None

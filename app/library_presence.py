@@ -4,11 +4,11 @@ import asyncio
 import logging
 import re
 import time
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
+from defusedxml import ElementTree as ET
 
 from app.config import settings
 
@@ -69,6 +69,16 @@ def _extract_people(value: Any) -> str:
         return ", ".join(people)
     return ""
 
+
+def _plex_role_people(node: Any) -> str:
+    people = []
+    for child in node.findall("Role"):
+        value = child.attrib.get("tag", "").strip()
+        value = re.sub(r"^narrators?\s*:\s*", "", value, flags=re.IGNORECASE)
+        if value:
+            people.append(value)
+    return ", ".join(people)
+
 def _is_strict_match(title: str, authors: str, narrators: str, book: LibraryBook) -> bool:
     title_ok = _normalize_text(title) == _normalize_text(book.title)
     left_authors, right_authors = _split_people(authors), _split_people(book.authors)
@@ -116,8 +126,7 @@ class PlexProvider:
             if not _normalize_text(title):
                 continue
             author = node.attrib.get("parentTitle", "") or node.attrib.get("grandparentTitle", "")
-            role_tags = [c.attrib.get("tag", "") for c in node.findall("Role") if c.attrib.get("tag")]
-            narr = ", ".join([r for r in role_tags if "narrat" in r.lower()])
+            narr = _plex_role_people(node)
             books.append(LibraryBook(title=title, authors=author or "", narrators=narr))
         return books
 
@@ -131,8 +140,7 @@ class PlexProvider:
             if not _normalize_text(title):
                 continue
             author = node.attrib.get("grandparentTitle", "")
-            role_tags = [c.attrib.get("tag", "") for c in node.findall("Role") if c.attrib.get("tag")]
-            narr = ", ".join([r for r in role_tags if "narrat" in r.lower()])
+            narr = _plex_role_people(node)
             books.append(LibraryBook(title=title, authors=author or "", narrators=narr))
         return books
 

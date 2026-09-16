@@ -84,6 +84,13 @@ def test_torrent_info_hash_extracts_info_dict_hash():
     assert _torrent_info_hash(torrent_bytes) == "05c591eecfd83ffc3f863bb011bd324ea218c6e8"
 
 
+def test_torrent_info_hash_uses_sha256_for_v2_only_torrent():
+    torrent_bytes = b"d4:infod12:meta versioni2e4:name4:Book9:file treedeee"
+    info = b"d12:meta versioni2e4:name4:Book9:file treedee"
+    import hashlib
+    assert _torrent_info_hash(torrent_bytes) == hashlib.sha256(info).hexdigest()
+
+
 def test_torrent_info_hash_wraps_bencode_parse_failures():
     torrent_bytes = b"d4:infod4:name4:Book6:lengthi12345e"
     with pytest.raises(QbitError, match="malformed bencode structure"):

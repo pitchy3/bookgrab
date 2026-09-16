@@ -209,3 +209,11 @@ def test_health_endpoint_reports_database_failure(monkeypatch):
     response = TestClient(main.app).get("/api/health")
     assert response.status_code == 503
     assert response.json() == {"ok": False, "database": "unavailable"}
+
+
+def test_health_endpoint_rejects_corrupt_database(monkeypatch, tmp_path):
+    database = tmp_path / "app.db"
+    database.write_text("not a sqlite database")
+    monkeypatch.setattr(main.settings, "database_path", str(database))
+    response = TestClient(main.app).get("/api/health")
+    assert response.status_code == 503

@@ -180,6 +180,7 @@ def test_run_import_once_recovers_and_uses_fresh_content_path(monkeypatch):
     )
     summary = asyncio.run(importer.run_import_once(q))
     assert summary["processed"] == 1
+    assert summary["imported"] == 1
     assert seen["content_path"] == "/fresh/book.mp3"
 
 
@@ -217,6 +218,21 @@ def test_run_import_once_logs_diagnostic_when_amount_left_zero_but_progress_impe
     assert summary["processed"] == 1
     assert summary["imported"] == 1
     assert any("amount_left=0 but progress=0.9999" in (u.get("last_error") or "") for u in updates)
+
+
+def test_run_import_once_rejects_concurrent_pass():
+    async def scenario():
+        await importer.importer_lock.acquire()
+        try:
+            try:
+                await importer.run_import_once()
+                assert False, "expected ImporterAlreadyRunning"
+            except importer.ImporterAlreadyRunning:
+                pass
+        finally:
+            importer.importer_lock.release()
+
+    asyncio.run(scenario())
 
 
 def _plan_paths(download, content_path, files, library_root):

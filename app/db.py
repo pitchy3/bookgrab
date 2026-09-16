@@ -160,7 +160,7 @@ def get_import_status(limit: int = 20) -> dict[str, Any]:
         counts_rows = conn.execute("SELECT import_status, COUNT(*) as c FROM downloads GROUP BY import_status").fetchall()
         counts = {row["import_status"]: row["c"] for row in counts_rows}
         recent = [dict(r) for r in conn.execute("SELECT * FROM downloads ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
-        files = [dict(r) for r in conn.execute("SELECT * FROM imported_files ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+        files = [dict(r) for r in conn.execute("SELECT * FROM imported_files ORDER BY imported_at DESC, id DESC LIMIT ?", (limit,)).fetchall()]
         return {"counts": counts, "recent_downloads": recent, "recent_imported_files": files, "recent_files": files}
 
 

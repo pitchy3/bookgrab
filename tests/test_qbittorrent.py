@@ -58,9 +58,37 @@ def test_add_torrent_looks_up_by_info_hash(monkeypatch):
     assert result['hash'] == expected_hash
 
 
+def test_add_torrent_preserves_hash_when_verification_fails(monkeypatch):
+    import app.qbittorrent as qbm
+
+    monkeypatch.setattr(qbm.httpx, 'AsyncClient', _Client)
+    torrent_bytes = b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
+    expected_hash = _torrent_info_hash(torrent_bytes)
+
+    async def _failed_verification(self, hash):
+        raise QbitError("temporary login failure")
+
+    async def _no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(QbitClient, 'get_torrent', _failed_verification)
+    monkeypatch.setattr(qbm.asyncio, 'sleep', _no_sleep)
+
+    result = asyncio.run(QbitClient().add_torrent(torrent_bytes, 'audiobook', 'Book'))
+    assert result['hash'] == expected_hash
+    assert "accepted" in result['last_error']
+
+
 def test_torrent_info_hash_extracts_info_dict_hash():
     torrent_bytes = b"d8:announce3:xyz4:infod4:name4:Book6:lengthi12345eee"
     assert _torrent_info_hash(torrent_bytes) == "05c591eecfd83ffc3f863bb011bd324ea218c6e8"
+
+
+def test_torrent_info_hash_uses_sha256_for_v2_only_torrent():
+    torrent_bytes = b"d4:infod12:meta versioni2e4:name4:Book9:file treedeee"
+    info = b"d12:meta versioni2e4:name4:Book9:file treedee"
+    import hashlib
+    assert _torrent_info_hash(torrent_bytes) == hashlib.sha256(info).hexdigest()
 
 
 def test_torrent_info_hash_wraps_bencode_parse_failures():

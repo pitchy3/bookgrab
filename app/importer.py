@@ -271,6 +271,16 @@ def hardlink_file(src: str | Path, dst: str | Path, conflict_policy: str, dry_ru
     return "linked"
 
 
+def classify_import_result(linked: int, failed: int, skipped: int) -> str:
+    if failed:
+        return "partial" if linked or skipped else "failed"
+    if linked:
+        return "imported"
+    if skipped:
+        return "skipped"
+    return "failed"
+
+
 async def import_download(download: dict, qbit_torrent: dict | None) -> str:
     try:
         media_type = download["media_type"]
@@ -306,7 +316,7 @@ async def import_download(download: dict, qbit_torrent: dict | None) -> str:
             except Exception as exc:
                 fail += 1
                 record_imported_file(download["id"], str(plan.source_path), str(plan.destination_path), None, "failed", str(exc))
-        final = "imported" if ok and not fail and not skip else "skipped" if skip and not ok and not fail else "partial" if (ok or skip) and fail else "failed"
+        final = classify_import_result(ok, fail, skip)
         update_download_import_state(download["id"], final, None if final != "failed" else "Import failed", completed=True)
         return final
     except Exception as exc:

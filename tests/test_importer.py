@@ -4,7 +4,7 @@ import asyncio
 import pytest
 
 from app import importer
-from app.importer import find_importable_files, hardlink_file, is_supported_media_file, plan_imports
+from app.importer import classify_import_result, find_importable_files, hardlink_file, is_supported_media_file, plan_imports
 
 
 def test_media_extension_filtering():
@@ -125,6 +125,14 @@ def test_conflict_invalid_policy(tmp_path):
         assert False, "expected ValueError"
     except ValueError:
         assert True
+
+
+def test_mixed_linked_and_skipped_files_are_successful():
+    assert classify_import_result(linked=1, failed=0, skipped=1) == "imported"
+
+
+def test_mixed_success_and_failure_is_partial():
+    assert classify_import_result(linked=1, failed=1, skipped=1) == "partial"
 
 
 def test_directory_discovery_and_junk_ignore(tmp_path):

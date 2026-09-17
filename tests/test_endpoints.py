@@ -199,3 +199,21 @@ def test_source_auth_panel_moves_to_auth_page(monkeypatch):
     assert "/auth" in home.text
     assert "MAM Source Auth" in auth.text
     assert "sourceAuthStatus" in auth.text
+
+
+def test_health_endpoint_reports_database_failure(monkeypatch):
+    def fail_connection():
+        raise OSError("database unavailable")
+
+    monkeypatch.setattr(main, "get_conn", fail_connection)
+    response = TestClient(main.app).get("/api/health")
+    assert response.status_code == 503
+    assert response.json() == {"ok": False, "database": "unavailable"}
+
+
+def test_health_endpoint_rejects_corrupt_database(monkeypatch, tmp_path):
+    database = tmp_path / "app.db"
+    database.write_text("not a sqlite database")
+    monkeypatch.setattr(main.settings, "database_path", str(database))
+    response = TestClient(main.app).get("/api/health")
+    assert response.status_code == 503

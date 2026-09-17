@@ -4,7 +4,7 @@ import time
 import pytest
 
 from app import main
-from app.mam import MamError
+from app.mam import MamClient, MamError
 from app.models import AddRequest, SearchRequest
 
 
@@ -116,3 +116,26 @@ def test_prune_search_cache_enforces_max_entries(monkeypatch):
     assert "k1" not in main._search_cache
     assert "k2" in main._search_cache
     assert "k3" in main._search_cache
+
+
+def test_mam_search_wraps_non_json_response(monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            raise ValueError("not json")
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr("app.mam.httpx.AsyncClient", lambda **_kwargs: Client())
+    with pytest.raises(MamError, match="Unexpected non-JSON response from search API"):
+        asyncio.run(MamClient().search("book", "audiobook", ["title"], "seedersDesc", "active"))

@@ -29,10 +29,22 @@ async function doSearch() {
   const media_type = document.getElementById('mediaType').value;
   const sort = document.getElementById('sort').value;
   const search_in = [...document.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
-  const resp = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query, media_type, sort, search_in})});
-  const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Search failed', 'error');
-  renderResults(data.results || []);
+  try {
+    const resp = await fetch('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query, media_type, sort, search_in})});
+    const data = await responseJson(resp);
+    if (!resp.ok) return setStatus(data.detail || 'Search failed', 'error');
+    renderResults(data.results || []);
+  } catch (error) {
+    setStatus(error.message || 'Search failed', 'error');
+  }
+}
+
+async function responseJson(resp) {
+  try {
+    return await resp.json();
+  } catch (error) {
+    throw new Error(resp.ok ? 'Server returned an invalid response' : `Request failed (HTTP ${resp.status})`);
+  }
 }
 
 function formatDynamicState(state) {
@@ -53,7 +65,7 @@ async function loadSourceAuthStatus() {
   if (!sourceAuthStatusEl) return;
   try {
     const resp = await fetch('/api/source-auth/status');
-    const data = await resp.json();
+    const data = await responseJson(resp);
     if (!resp.ok) throw new Error(data.detail || 'Failed to load source auth status');
     sourceAuthStatusEl.textContent = `Cookie configured: ${data.mam_cookie_configured ? 'yes' : 'no'} • mam_id present: ${data.mam_id_present ? 'yes' : 'no'} • Dynamic seedbox: ${data.dynamic_seedbox_enabled ? 'enabled' : 'disabled'} • ${formatDynamicState(data.last_dynamic_seedbox_refresh)}`;
   } catch (error) {
@@ -66,7 +78,7 @@ async function refreshDynamicSeedbox() {
   if (button) button.disabled = true;
   try {
     const resp = await fetch('/api/source-auth/dynamic-seedbox-refresh', {method:'POST'});
-    const data = await resp.json();
+    const data = await responseJson(resp);
     const failed = !resp.ok || data.ok === false;
     if (failed && data.cooldown !== true) {
       setStatus(data.message || data.detail || 'Dynamic seedbox refresh failed', 'error');
@@ -79,6 +91,8 @@ async function refreshDynamicSeedbox() {
       setStatus(data.message || (data.ok ? 'Dynamic seedbox refreshed' : 'Dynamic seedbox refresh completed'));
     }
     await loadSourceAuthStatus();
+  } catch (error) {
+    setStatus(error.message || 'Dynamic seedbox refresh failed', 'error');
   } finally {
     if (button) button.disabled = false;
   }
@@ -88,12 +102,16 @@ async function saveMamCookie() {
   const input = document.getElementById('mamCookieInput');
   const cookie = input?.value.trim() || '';
   if (!cookie) return setStatus('Paste a MAM API cookie/token first', 'warning');
-  const resp = await fetch('/api/source-auth/cookie', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cookie})});
-  if (input) input.value = '';
-  const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Failed to save cookie/token', 'error');
-  setStatus('MAM API cookie/token saved');
-  await loadSourceAuthStatus();
+  try {
+    const resp = await fetch('/api/source-auth/cookie', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cookie})});
+    const data = await responseJson(resp);
+    if (!resp.ok) return setStatus(data.detail || 'Failed to save cookie/token', 'error');
+    if (input) input.value = '';
+    setStatus('MAM API cookie/token saved');
+    await loadSourceAuthStatus();
+  } catch (error) {
+    setStatus(error.message || 'Failed to save cookie/token', 'error');
+  }
 }
 
 function appendLabeledValue(container, label, value) {
@@ -430,11 +448,15 @@ if (sortSelect) sortSelect.value = window.DEFAULTS?.sort || 'seedersDesc';
 document.getElementById('loginBtn')?.addEventListener('click', async () => {
   const username = document.getElementById('username').value;
   const password = document.getElementById('password').value;
-  const resp = await fetch('/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})});
-  const data = await resp.json();
-  if (!resp.ok) return setStatus(data.detail || 'Login failed', 'error');
-  app.classList.remove('hidden');
-  loginCard?.classList.add('hidden');
-  setStatus('Logged in');
-  loadSourceAuthStatus();
+  try {
+    const resp = await fetch('/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})});
+    const data = await responseJson(resp);
+    if (!resp.ok) return setStatus(data.detail || 'Login failed', 'error');
+    app.classList.remove('hidden');
+    loginCard?.classList.add('hidden');
+    setStatus('Logged in');
+    loadSourceAuthStatus();
+  } catch (error) {
+    setStatus(error.message || 'Login failed', 'error');
+  }
 });

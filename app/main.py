@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import hmac
 import os
+import secrets
 import time
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,10 @@ _search_cache_updated_at: dict[str, float] = {}
 _importer_task = None
 _qbit_mam_sync_task = None
 _SESSION_MAX_AGE_SECONDS = 60 * 60 * 8
+_LOGIN_WINDOW_SECONDS = 60
+_LOGIN_MAX_FAILURES = 5
+_login_failures: dict[str, list[float]] = {}
+_login_failure_lock = asyncio.Lock()
 
 
 def _is_insecure_default(value: str, insecure_values: set[str]) -> bool:
@@ -80,9 +85,22 @@ def _validate_import_config() -> None:
         raise RuntimeError("At least one of IMPORT_AUDIOBOOK_LIBRARY_PATH or IMPORT_EBOOK_LIBRARY_PATH must be set when importer is enabled")
 
 
-def _sign_token(value: str) -> str:
-    digest = hmac.new(settings.app_session_secret.encode(), value.encode(), hashlib.sha256).hexdigest()
-    return f"{value}:{digest}"
+def _sign_token(value: str, issued_at: int | None = None, nonce: str | None = None) -> str:
+    payload = f"{issued_at if issued_at is not None else int(time.time())}:{nonce or secrets.token_urlsafe(16)}:{value}"
+    digest = hmac.new(settings.app_session_secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}:{digest}"
+
+
+def _verify_token(token: str, now: int | None = None) -> bool:
+    try:
+        payload, supplied_digest = token.rsplit(":", 1)
+        issued_text, _nonce, username = payload.split(":", 2)
+        issued_at = int(issued_text)
+    except (ValueError, TypeError):
+        return False
+    expected_digest = hmac.new(settings.app_session_secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    age = (now if now is not None else int(time.time())) - issued_at
+    return hmac.compare_digest(supplied_digest, expected_digest) and username == settings.app_username and 0 <= age <= _SESSION_MAX_AGE_SECONDS
 
 
 def _is_logged_in(request: Request) -> bool:
@@ -91,8 +109,31 @@ def _is_logged_in(request: Request) -> bool:
     token = request.cookies.get("session")
     if not token:
         return False
-    expected = _sign_token(settings.app_username)
-    return hmac.compare_digest(token, expected)
+    return _verify_token(token)
+
+
+def _login_key(request: Request) -> str:
+    peer = request.client.host if request.client else "unknown"
+    if peer in settings.app_trusted_proxy_ips:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        forwarded_client = forwarded_for.split(",", 1)[0].strip()
+        if forwarded_client:
+            return forwarded_client
+    return peer
+
+
+async def _record_login_attempt(key: str, now: float, credentials_valid: bool) -> bool:
+    async with _login_failure_lock:
+        recent = [attempt for attempt in _login_failures.get(key, []) if now - attempt < _LOGIN_WINDOW_SECONDS]
+        if len(recent) >= _LOGIN_MAX_FAILURES:
+            _login_failures[key] = recent
+            return True
+        if credentials_valid:
+            _login_failures.pop(key, None)
+        else:
+            recent.append(now)
+            _login_failures[key] = recent
+        return False
 
 
 def _require_login(request: Request) -> None:
@@ -208,7 +249,13 @@ async def login(request: Request) -> JSONResponse:
     if not settings.app_auth_enabled:
         return JSONResponse({"ok": True})
     data = await request.json()
-    if data.get("username") != settings.app_username or data.get("password") != settings.app_password:
+    username_ok = hmac.compare_digest(str(data.get("username", "")).encode(), settings.app_username.encode())
+    password_ok = hmac.compare_digest(str(data.get("password", "")).encode(), settings.app_password.encode())
+    key = _login_key(request)
+    limited = await _record_login_attempt(key, time.time(), username_ok and password_ok)
+    if limited:
+        raise HTTPException(status_code=429, detail="Too many failed login attempts; try again later")
+    if not username_ok or not password_ok:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     response = JSONResponse({"ok": True})
     response.set_cookie(

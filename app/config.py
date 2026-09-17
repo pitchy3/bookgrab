@@ -39,6 +39,7 @@ class Settings:
     app_username: str = field(default_factory=lambda: os.getenv("APP_USERNAME", "admin"))
     app_password: str = field(default_factory=lambda: os.getenv("APP_PASSWORD", "change-me"))
     app_session_secret: str = field(default_factory=lambda: os.getenv("APP_SESSION_SECRET", secrets.token_urlsafe(32)))
+    app_trusted_proxy_ips: list[str] = field(default_factory=lambda: parse_csv_list(os.getenv("APP_TRUSTED_PROXY_IPS", "127.0.0.1,::1")))
 
     mam_base_url: str = field(default_factory=lambda: os.getenv("MAM_BASE_URL", "https://www.myanonamouse.net").rstrip("/"))
     mam_cookie: str = field(default_factory=lambda: os.getenv("MAM_COOKIE", ""))

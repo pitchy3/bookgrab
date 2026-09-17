@@ -145,8 +145,11 @@ def update_download_qbit_info(download_id: int, qbit_hash: str | None = None, qb
 def record_imported_file(download_id: int, source_path: str, destination_path: str, size_bytes: int | None, status: str, error: str | None = None) -> None:
     with get_conn() as conn:
         conn.execute(
-            """INSERT OR IGNORE INTO imported_files (download_id,source_path,destination_path,size_bytes,imported_at,status,error)
-            VALUES (?,?,?,?,?,?,?)""",
+            """INSERT INTO imported_files (download_id,source_path,destination_path,size_bytes,imported_at,status,error)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(download_id, source_path, destination_path) DO UPDATE SET
+              size_bytes=excluded.size_bytes, imported_at=excluded.imported_at,
+              status=excluded.status, error=excluded.error""",
             (download_id, source_path, destination_path, size_bytes, datetime.now(UTC).isoformat(), status, error),
         )
         conn.commit()
@@ -157,7 +160,7 @@ def get_import_status(limit: int = 20) -> dict[str, Any]:
         counts_rows = conn.execute("SELECT import_status, COUNT(*) as c FROM downloads GROUP BY import_status").fetchall()
         counts = {row["import_status"]: row["c"] for row in counts_rows}
         recent = [dict(r) for r in conn.execute("SELECT * FROM downloads ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
-        files = [dict(r) for r in conn.execute("SELECT * FROM imported_files ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+        files = [dict(r) for r in conn.execute("SELECT * FROM imported_files ORDER BY imported_at DESC, id DESC LIMIT ?", (limit,)).fetchall()]
         return {"counts": counts, "recent_downloads": recent, "recent_imported_files": files, "recent_files": files}
 
 

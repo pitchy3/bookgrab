@@ -2,7 +2,7 @@ fastapi==0.141.1
 uvicorn[standard]==0.53.0
 httpx==0.28.1
 jinja2==3.1.6
-pydantic==2.13.5
+pydantic==2.14.1
 
 croniter==6.2.4
 defusedxml==0.7.1
